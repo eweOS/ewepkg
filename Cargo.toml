@@ -1,0 +1,14 @@
+[workspace]
+members = ["ewe", "ewe-build"]
+
+[workspace.dependencies]
+anyhow = "1.0.68"
+clap = { version = "4.0.32", features = ["derive"] }
+reqwest = "0.11.13"
+
+[profile.release]
+strip = true
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
+lto = true

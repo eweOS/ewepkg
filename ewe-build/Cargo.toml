@@ -1,0 +1,15 @@
+[package]
+name = "ewe-build"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ewe-build"
+path = "main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+mlua = { version = "0.8.6", features = ["lua54"] }
+paste = "1.0.11"
+reqwest = { workspace = true }
