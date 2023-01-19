@@ -12,7 +12,8 @@ struct Args {
 
 fn run() -> anyhow::Result<()> {
   let args = Args::parse();
-  BuildScript::new(&args.path)?;
+  let script = BuildScript::new(&args.path)?;
+  dbg!(script);
   Ok(())
 }
 

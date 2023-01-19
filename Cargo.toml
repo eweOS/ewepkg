@@ -1,9 +1,10 @@
 [workspace]
-members = ["ewe", "ewe-build"]
+members = ["ewe", "ewe-build", "commons"]
 
 [workspace.dependencies]
 anyhow = "1.0.68"
 clap = { version = "4.0.32", features = ["derive"] }
+mlua = { version = "0.8.6", features = ["lua54", "serialize"] }
 reqwest = "0.11.13"
 
 [profile.release]

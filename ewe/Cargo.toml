@@ -8,3 +8,4 @@ name = "ewe"
 path = "main.rs"
 
 [dependencies]
+ewe-commons = { path = "../commons" }

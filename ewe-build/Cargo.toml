@@ -10,6 +10,7 @@ path = "main.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
-mlua = { version = "0.8.6", features = ["lua54"] }
+ewe-commons = { path = "../commons", features = ["mlua"] }
+mlua = { version = "0.8.6", features = ["lua54", "serialize"] }
 paste = "1.0.11"
 reqwest = { workspace = true }

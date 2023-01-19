@@ -1,27 +1,29 @@
 mod structs;
 
-use self::structs::Package;
+use self::structs::PackageItem;
 use mlua::Error::{CallbackError, MemoryError, RuntimeError, SyntaxError};
-use mlua::{ExternalError, Lua, Table};
+use mlua::{ExternalError, Lua};
+use std::collections::HashSet;
 use std::path::Path;
-use structs::Source;
+use structs::SourceItem;
 
+#[derive(Debug)]
 pub struct BuildScript {
   lua: Lua,
-  source: Source,
-  packages: Vec<Package>,
+  source: SourceItem,
+  packages: HashSet<PackageItem>,
 }
 
 impl BuildScript {
   pub fn new(path: &Path) -> mlua::Result<Self> {
     let lua = Lua::new();
-    lua.set_app_data(Vec::<Package>::new());
+    lua.set_app_data(HashSet::<PackageItem>::new());
     // TODO: add many things
     let globals = lua.globals();
     globals.raw_set(
       "define_source",
-      lua.create_function(|lua, source: Source| {
-        if lua.app_data_ref::<Source>().is_none() {
+      lua.create_function(|lua, source: SourceItem| {
+        if lua.app_data_ref::<SourceItem>().is_none() {
           lua.set_app_data(source);
           Ok(())
         } else {
@@ -31,10 +33,14 @@ impl BuildScript {
     )?;
     globals.raw_set(
       "define_package",
-      lua.create_function(|_lua, table: Table| {
-        let name = table.get::<_, String>("name")?;
-        dbg!(name);
-        Ok(())
+      lua.create_function(|lua, package: PackageItem| {
+        let mut packages = lua.app_data_mut::<HashSet<PackageItem>>().unwrap();
+        if packages.contains(&package) {
+          Err(format!("duplicate package '{}'", &package.info.name).to_lua_err())
+        } else {
+          packages.insert(package);
+          Ok(())
+        }
       })?,
     )?;
     drop(globals);
@@ -46,7 +52,7 @@ impl BuildScript {
     let source = lua
       .remove_app_data()
       .ok_or_else(|| "no source specified".to_lua_err())?;
-    let packages: Vec<_> = lua.remove_app_data().unwrap();
+    let packages: HashSet<_> = lua.remove_app_data().unwrap();
     if packages.is_empty() {
       return Err("no package specified".to_lua_err());
     }
