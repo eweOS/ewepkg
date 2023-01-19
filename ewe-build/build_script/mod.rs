@@ -1,6 +1,7 @@
 mod structs;
 
 use self::structs::PackageItem;
+use ewe_commons::{Package, Source};
 use mlua::Error::{CallbackError, MemoryError, RuntimeError, SyntaxError};
 use mlua::{ExternalError, Lua};
 use std::collections::HashSet;
@@ -62,6 +63,14 @@ impl BuildScript {
       source,
       packages,
     })
+  }
+
+  pub fn source(&self) -> &Source {
+    &self.source.info
+  }
+
+  pub fn packages(&self) -> impl Iterator<Item = &Package> {
+    self.packages.iter().map(|x| &x.info)
   }
 }
 

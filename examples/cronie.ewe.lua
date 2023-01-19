@@ -10,7 +10,6 @@ define_source {
   architecture = "any",
   homepage = "https://github.com/cronie-crond/cronie/",
   license = { "apache", "custom:CC0" },
-  -- build_depends = {},
   depends = { "pam", "bash", "run-parts" },
   optional_depends = {
     { name = "smtp-server", description = "send job output via email" },
@@ -31,8 +30,12 @@ define_source {
   },
 
   build = function()
-    ewe.helpers.cmake.build()
+    -- ewe.helpers.make()
     -- todo
+  end,
+
+  check = function()
+    -- todo()
   end
 }
 
@@ -40,6 +43,7 @@ define_source {
 define_package {
   name = name,
   description = description,
+
   package = function()
     -- todo
   end

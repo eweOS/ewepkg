@@ -17,8 +17,31 @@ use crate::LuaTableExt;
 #[cfg(feature = "mlua")]
 use mlua::{ExternalError, ExternalResult, FromLua, Lua, LuaSerdeExt, Table};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-pub struct PkgName(Box<str>);
+#[cfg(feature = "mlua")]
+struct LuaUrl(Url);
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for LuaUrl {
+  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
+    let s: mlua::String = lua.unpack(lua_value)?;
+    let s = std::str::from_utf8(s.as_bytes())?;
+    let url = Url::parse(s).to_lua_err()?;
+    Ok(Self(url))
+  }
+}
+
+#[cfg(feature = "mlua")]
+struct LuaPath(Box<Path>);
+
+#[cfg(feature = "mlua")]
+impl<'lua> FromLua<'lua> for LuaPath {
+  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
+    let s: mlua::String = lua.unpack(lua_value)?;
+    let s = std::str::from_utf8(s.as_bytes())?;
+    let path = Path::new(s);
+    Ok(Self(path.into()))
+  }
+}
 
 // TODO: more strict
 fn assure_pkg_name<S: AsRef<str>>(s: S) -> Result<S, ParseNameError> {
@@ -31,6 +54,9 @@ fn assure_pkg_name<S: AsRef<str>>(s: S) -> Result<S, ParseNameError> {
     Some(c) => Err(ParseNameError(c)),
   }
 }
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct PkgName(Box<str>);
 
 impl FromStr for PkgName {
   type Err = ParseNameError;
@@ -80,17 +106,32 @@ impl<'lua> FromLua<'lua> for PkgName {
 #[error("package name contains invalid character `{0}`")]
 pub struct ParseNameError(char);
 
+// TODO: architecture, license
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Source {
   pub name: PkgName,
   pub description: Box<str>,
   pub version: PkgVersion,
+
+  #[serde(default)]
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub homepage: Option<Url>,
+
   // TODO: add version requirement
   #[serde(default)]
+  #[serde(skip_serializing_if = "Vec::is_empty")]
   pub build_depends: Vec<PkgName>,
-  pub depends: Vec<PkgName>,
+
   #[serde(default)]
+  #[serde(skip_serializing_if = "Vec::is_empty")]
+  pub depends: Vec<PkgName>,
+
+  #[serde(default)]
+  #[serde(skip_serializing_if = "Vec::is_empty")]
   pub optional_depends: Vec<OptionalDepends>,
+
+  #[serde(default)]
+  #[serde(skip_serializing_if = "Vec::is_empty")]
   pub source: Vec<SourceFile>,
 }
 
@@ -101,14 +142,21 @@ impl Source {
       name: table.get_better_error("name")?,
       description: table.get_better_error("description")?,
       version: table.get_better_error("version")?,
+      homepage: table
+        .get_better_error::<Option<LuaUrl>>("homepage")?
+        .map(|x| x.0),
       build_depends: table
         .get_better_error::<Option<_>>("build_depends")?
         .unwrap_or_default(),
-      depends: table.get_better_error("depends")?,
+      depends: table
+        .get_better_error::<Option<_>>("depends")?
+        .unwrap_or_default(),
       optional_depends: table
         .get_better_error::<Option<_>>("optional_depends")?
         .unwrap_or_default(),
-      source: table.get_better_error("source")?,
+      source: table
+        .get_better_error::<Option<_>>("source")?
+        .unwrap_or_default(),
     })
   }
 }
@@ -123,6 +171,7 @@ impl<'lua> FromLua<'lua> for Source {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptionalDepends {
   pub name: PkgName,
+
   #[serde(default)]
   pub description: Option<Box<str>>,
 }
@@ -140,33 +189,9 @@ pub struct SourceFile {
   pub location: SourceLocation,
   #[serde(flatten)]
   pub checksums: HashMap<ChecksumKind, Box<str>>,
+  #[serde(default)]
+  #[serde(skip_serializing_if = "std::ops::Not::not")]
   pub skip_checksum: bool,
-}
-
-#[cfg(feature = "mlua")]
-struct LuaUrl(Url);
-
-#[cfg(feature = "mlua")]
-impl<'lua> FromLua<'lua> for LuaUrl {
-  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
-    let s: mlua::String = lua.unpack(lua_value)?;
-    let s = std::str::from_utf8(s.as_bytes())?;
-    let url = Url::parse(s).to_lua_err()?;
-    Ok(Self(url))
-  }
-}
-
-#[cfg(feature = "mlua")]
-struct LuaPath(Box<Path>);
-
-#[cfg(feature = "mlua")]
-impl<'lua> FromLua<'lua> for LuaPath {
-  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
-    let s: mlua::String = lua.unpack(lua_value)?;
-    let s = std::str::from_utf8(s.as_bytes())?;
-    let path = Path::new(s);
-    Ok(Self(path.into()))
-  }
 }
 
 #[cfg(feature = "mlua")]
@@ -180,6 +205,7 @@ impl SourceFile {
       (Some(_), Some(_)) => return Err("can't decide whether to use URL or path".to_lua_err()),
       (None, None) => return Err("no source location defined".to_lua_err()),
     };
+
     let mut checksums = HashMap::new();
     for (kind, key) in [
       (ChecksumKind::Sha256, "sha256sum"),
@@ -189,7 +215,9 @@ impl SourceFile {
         checksums.insert(kind, s);
       }
     }
+
     let skip_checksum = table.get_better_error("skip_checksum")?;
+
     Ok(Self {
       location,
       checksums,
@@ -209,6 +237,7 @@ impl<'lua> FromLua<'lua> for SourceFile {
 pub enum SourceLocation {
   #[serde(rename = "url")]
   Http(Url),
+
   #[serde(rename = "path")]
   Local(Box<Path>),
 }
@@ -217,14 +246,28 @@ pub enum SourceLocation {
 pub enum ChecksumKind {
   #[serde(rename = "sha256sum")]
   Sha256,
+
   #[serde(rename = "blake2sum")]
   Blake2,
 }
 
+// TODO: architecture
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Package {
   pub name: PkgName,
   pub description: Box<str>,
+
+  #[serde(default)]
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub homepage: Option<Url>,
+
+  #[serde(default)]
+  #[serde(skip_serializing_if = "Vec::is_empty")]
+  pub depends: Vec<PkgName>,
+
+  #[serde(default)]
+  #[serde(skip_serializing_if = "Vec::is_empty")]
+  pub optional_depends: Vec<OptionalDepends>,
 }
 
 #[cfg(feature = "mlua")]
@@ -233,6 +276,15 @@ impl Package {
     Ok(Self {
       name: table.get_better_error("name")?,
       description: table.get_better_error("description")?,
+      homepage: table
+        .get_better_error::<Option<LuaUrl>>("homepage")?
+        .map(|x| x.0),
+      depends: table
+        .get_better_error::<Option<_>>("depends")?
+        .unwrap_or_default(),
+      optional_depends: table
+        .get_better_error::<Option<_>>("optional_depends")?
+        .unwrap_or_default(),
     })
   }
 }

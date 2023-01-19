@@ -13,7 +13,7 @@ struct Args {
 fn run() -> anyhow::Result<()> {
   let args = Args::parse();
   let script = BuildScript::new(&args.path)?;
-  dbg!(script);
+  println!("{}", serde_json::to_string_pretty(script.source())?);
   Ok(())
 }
 
