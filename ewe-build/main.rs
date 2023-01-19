@@ -14,6 +14,10 @@ fn run() -> anyhow::Result<()> {
   let args = Args::parse();
   let script = BuildScript::new(&args.path)?;
   println!("{}", serde_json::to_string_pretty(script.source())?);
+  println!("packages:");
+  for pkg in script.packages() {
+    println!("{}", serde_json::to_string_pretty(pkg)?);
+  }
   Ok(())
 }
 

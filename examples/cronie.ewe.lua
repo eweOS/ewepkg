@@ -1,11 +1,9 @@
-local name = "cronie"
 local version = "1.6.1"
-local description = "Daemon that runs specified programs at scheduled times and related tools"
 local revision = "1"
 
 define_source {
-  name = name,
-  description = description,
+  name = "cronie",
+  description = "Daemon that runs specified programs at scheduled times and related tools",
   version = version .. "-" .. revision,
   architecture = "any",
   homepage = "https://github.com/cronie-crond/cronie/",
@@ -16,8 +14,8 @@ define_source {
     { name = "smtp-forwarder", description = "forward job output to email server" }
   },
   source = {
-    { url = ("https://github.com/cronie.crond/cronie/releases/download/%s-%s/%s-%s.tar.gz")
-        :format(name, version, name, version),
+    { url = ("https://github.com/cronie.crond/cronie/releases/download/cronie-%s/cronie-%s.tar.gz")
+        :format(version, version),
       sha256sum = "2cd0f0dd1680e6b9c39bf1e3a5e7ad6df76aa940de1ee90a453633aa59984e62" },
     { path = "80-cronie.hook",
       sha256sum = "f85e9a68bf3bf446f8a6167f068371c06afffe11ca71935d8ee5487b38b2c9db" },
@@ -41,9 +39,6 @@ define_source {
 
 -- Source only produces one package, name and description can be omitted.
 define_package {
-  name = name,
-  description = description,
-
   package = function()
     -- todo
   end

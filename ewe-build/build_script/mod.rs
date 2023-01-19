@@ -1,12 +1,11 @@
 mod structs;
 
-use self::structs::PackageItem;
-use ewe_commons::{Package, Source};
+use ewe_commons::types::{Package, Source};
 use mlua::Error::{CallbackError, MemoryError, RuntimeError, SyntaxError};
 use mlua::{ExternalError, Lua};
 use std::collections::HashSet;
 use std::path::Path;
-use structs::SourceItem;
+use structs::{PackageDelta, PackageItem, SourceItem};
 
 #[derive(Debug)]
 pub struct BuildScript {
@@ -19,7 +18,7 @@ impl BuildScript {
   pub fn new(path: &Path) -> mlua::Result<Self> {
     let lua = Lua::new();
     lua.set_app_data(HashSet::<PackageItem>::new());
-    // TODO: add many things
+
     let globals = lua.globals();
     globals.raw_set(
       "define_source",
@@ -34,7 +33,12 @@ impl BuildScript {
     )?;
     globals.raw_set(
       "define_package",
-      lua.create_function(|lua, package: PackageItem| {
+      lua.create_function(|lua, delta: PackageDelta| {
+        let source = lua
+          .app_data_ref::<SourceItem>()
+          .ok_or_else(|| "source not defined; define source before packages".to_lua_err())?;
+        let package = delta.into_package_item(&source.info);
+        drop(source);
         let mut packages = lua.app_data_mut::<HashSet<PackageItem>>().unwrap();
         if packages.contains(&package) {
           Err(format!("duplicate package '{}'", &package.info.name).to_lua_err())
@@ -45,6 +49,7 @@ impl BuildScript {
       })?,
     )?;
     drop(globals);
+
     lua
       .load(path)
       .exec()

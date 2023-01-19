@@ -13,35 +13,11 @@ use url::Url;
 use version::PkgVersion;
 
 #[cfg(feature = "mlua")]
-use crate::LuaTableExt;
+use crate::lua_helpers::LuaTableExt;
+#[cfg(feature = "mlua")]
+use crate::lua_helpers::{LuaPath, LuaUrl};
 #[cfg(feature = "mlua")]
 use mlua::{ExternalError, ExternalResult, FromLua, Lua, LuaSerdeExt, Table};
-
-#[cfg(feature = "mlua")]
-struct LuaUrl(Url);
-
-#[cfg(feature = "mlua")]
-impl<'lua> FromLua<'lua> for LuaUrl {
-  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
-    let s: mlua::String = lua.unpack(lua_value)?;
-    let s = std::str::from_utf8(s.as_bytes())?;
-    let url = Url::parse(s).to_lua_err()?;
-    Ok(Self(url))
-  }
-}
-
-#[cfg(feature = "mlua")]
-struct LuaPath(Box<Path>);
-
-#[cfg(feature = "mlua")]
-impl<'lua> FromLua<'lua> for LuaPath {
-  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
-    let s: mlua::String = lua.unpack(lua_value)?;
-    let s = std::str::from_utf8(s.as_bytes())?;
-    let path = Path::new(s);
-    Ok(Self(path.into()))
-  }
-}
 
 // TODO: more strict
 fn assure_pkg_name<S: AsRef<str>>(s: S) -> Result<S, ParseNameError> {
@@ -161,13 +137,6 @@ impl Source {
   }
 }
 
-#[cfg(feature = "mlua")]
-impl<'lua> FromLua<'lua> for Source {
-  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
-    Self::from_table(&lua.unpack(lua_value)?)
-  }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptionalDepends {
   pub name: PkgName,
@@ -256,6 +225,7 @@ pub enum ChecksumKind {
 pub struct Package {
   pub name: PkgName,
   pub description: Box<str>,
+  pub version: PkgVersion,
 
   #[serde(default)]
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -268,31 +238,4 @@ pub struct Package {
   #[serde(default)]
   #[serde(skip_serializing_if = "Vec::is_empty")]
   pub optional_depends: Vec<OptionalDepends>,
-}
-
-#[cfg(feature = "mlua")]
-impl Package {
-  pub fn from_table(table: &Table) -> mlua::Result<Self> {
-    Ok(Self {
-      name: table.get_better_error("name")?,
-      description: table.get_better_error("description")?,
-      homepage: table
-        .get_better_error::<Option<LuaUrl>>("homepage")?
-        .map(|x| x.0),
-      depends: table
-        .get_better_error::<Option<_>>("depends")?
-        .unwrap_or_default(),
-      optional_depends: table
-        .get_better_error::<Option<_>>("optional_depends")?
-        .unwrap_or_default(),
-    })
-  }
-}
-
-#[cfg(feature = "mlua")]
-impl<'lua> FromLua<'lua> for Package {
-  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
-    let table: Table = lua.unpack(lua_value)?;
-    Self::from_table(&table)
-  }
 }
