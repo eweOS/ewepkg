@@ -1,5 +1,6 @@
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering::{self, *};
+use std::fmt::{self, Display, Formatter};
 use std::num::ParseIntError;
 use std::str::FromStr;
 use thiserror::Error;
@@ -168,14 +169,24 @@ impl PartialEq for PkgVersion {
 
 impl Eq for PkgVersion {}
 
+impl Display for PkgVersion {
+  fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    let u = &self.upstream;
+    match (self.epoch, &self.revision) {
+      (0, None) => f.write_str(u),
+      (e, None) => write!(f, "{e}:{u}"),
+      (0, Some(r)) => write!(f, "{u}-{r}"),
+      (e, Some(r)) => write!(f, "{e}:{u}-{r}"),
+    }
+  }
+}
+
 impl Serialize for PkgVersion {
   fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
     let u = &self.upstream;
     match (self.epoch, &self.revision) {
       (0, None) => ser.serialize_str(u),
-      (e, None) => ser.serialize_str(&format!("{e}:{u}")),
-      (0, Some(r)) => ser.serialize_str(&format!("{u}-{r}")),
-      (e, Some(r)) => ser.serialize_str(&format!("{e}:{u}-{r}")),
+      _ => ser.serialize_str(&self.to_string()),
     }
   }
 }
