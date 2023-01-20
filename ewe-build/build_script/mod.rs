@@ -3,7 +3,7 @@ mod structs;
 use ewe_commons::types::{Package, Source};
 use mlua::Error::{CallbackError, MemoryError, RuntimeError, SyntaxError};
 use mlua::{ExternalError, Lua};
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::path::Path;
 use structs::{PackageDelta, PackageItem, SourceItem};
 
@@ -11,13 +11,13 @@ use structs::{PackageDelta, PackageItem, SourceItem};
 pub struct BuildScript {
   lua: Lua,
   source: SourceItem,
-  packages: HashSet<PackageItem>,
+  packages: BTreeSet<PackageItem>,
 }
 
 impl BuildScript {
   pub fn new(path: &Path) -> mlua::Result<Self> {
     let lua = Lua::new();
-    lua.set_app_data(HashSet::<PackageItem>::new());
+    lua.set_app_data(BTreeSet::<PackageItem>::new());
 
     let globals = lua.globals();
     globals.raw_set(
@@ -39,7 +39,7 @@ impl BuildScript {
           .ok_or_else(|| "source not defined; define source before packages".to_lua_err())?;
         let package = delta.into_package_item(&source.info);
         drop(source);
-        let mut packages = lua.app_data_mut::<HashSet<PackageItem>>().unwrap();
+        let mut packages = lua.app_data_mut::<BTreeSet<PackageItem>>().unwrap();
         if packages.contains(&package) {
           Err(format!("duplicate package '{}'", &package.info.name).to_lua_err())
         } else {
@@ -58,7 +58,7 @@ impl BuildScript {
     let source = lua
       .remove_app_data()
       .ok_or_else(|| "no source specified".to_lua_err())?;
-    let packages: HashSet<_> = lua.remove_app_data().unwrap();
+    let packages: BTreeSet<_> = lua.remove_app_data().unwrap();
     if packages.is_empty() {
       return Err("no package specified".to_lua_err());
     }

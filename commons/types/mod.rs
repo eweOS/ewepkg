@@ -3,7 +3,7 @@ mod version;
 pub use version::*;
 
 use serde::{de, Deserialize, Deserializer, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::ops::Deref;
 use std::path::Path;
@@ -13,9 +13,7 @@ use url::Url;
 use version::PkgVersion;
 
 #[cfg(feature = "mlua")]
-use crate::lua_helpers::LuaTableExt;
-#[cfg(feature = "mlua")]
-use crate::lua_helpers::{LuaPath, LuaUrl};
+use crate::lua_helpers::{LuaPath, LuaTableExt, LuaUrl};
 #[cfg(feature = "mlua")]
 use mlua::{ExternalError, ExternalResult, FromLua, Lua, LuaSerdeExt, Table};
 
@@ -95,16 +93,16 @@ pub struct Source {
 
   // TODO: add version requirement
   #[serde(default)]
-  #[serde(skip_serializing_if = "Vec::is_empty")]
-  pub build_depends: Vec<PkgName>,
+  #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+  pub build_depends: BTreeSet<PkgName>,
 
   #[serde(default)]
-  #[serde(skip_serializing_if = "Vec::is_empty")]
-  pub depends: Vec<PkgName>,
+  #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+  pub depends: BTreeSet<PkgName>,
 
   #[serde(default)]
-  #[serde(skip_serializing_if = "Vec::is_empty")]
-  pub optional_depends: Vec<OptionalDepends>,
+  #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+  pub optional_depends: BTreeSet<OptionalDepends>,
 
   #[serde(default)]
   #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -142,7 +140,28 @@ pub struct OptionalDepends {
   pub name: PkgName,
 
   #[serde(default)]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub description: Option<Box<str>>,
+}
+
+impl PartialEq for OptionalDepends {
+  fn eq(&self, other: &Self) -> bool {
+    self.name == other.name
+  }
+}
+
+impl Eq for OptionalDepends {}
+
+impl PartialOrd for OptionalDepends {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+impl Ord for OptionalDepends {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    self.name.cmp(&other.name)
+  }
 }
 
 #[cfg(feature = "mlua")]
@@ -157,7 +176,7 @@ pub struct SourceFile {
   #[serde(flatten)]
   pub location: SourceLocation,
   #[serde(flatten)]
-  pub checksums: HashMap<ChecksumKind, Box<str>>,
+  pub checksums: BTreeMap<ChecksumKind, Box<str>>,
   #[serde(default)]
   #[serde(skip_serializing_if = "std::ops::Not::not")]
   pub skip_checksum: bool,
@@ -175,7 +194,7 @@ impl SourceFile {
       (None, None) => return Err("no source location defined".to_lua_err()),
     };
 
-    let mut checksums = HashMap::new();
+    let mut checksums = BTreeMap::new();
     for (kind, key) in [
       (ChecksumKind::Sha256, "sha256sum"),
       (ChecksumKind::Blake2, "blake2sum"),
@@ -211,7 +230,7 @@ pub enum SourceLocation {
   Local(Box<Path>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ChecksumKind {
   #[serde(rename = "sha256sum")]
   Sha256,
@@ -232,10 +251,10 @@ pub struct Package {
   pub homepage: Option<Url>,
 
   #[serde(default)]
-  #[serde(skip_serializing_if = "Vec::is_empty")]
-  pub depends: Vec<PkgName>,
+  #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+  pub depends: BTreeSet<PkgName>,
 
   #[serde(default)]
-  #[serde(skip_serializing_if = "Vec::is_empty")]
-  pub optional_depends: Vec<OptionalDepends>,
+  #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+  pub optional_depends: BTreeSet<OptionalDepends>,
 }

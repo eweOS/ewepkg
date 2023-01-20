@@ -2,7 +2,7 @@ use ewe_commons::lua_helpers::{LuaTableExt, LuaUrl};
 use ewe_commons::types::{OptionalDepends, Package, PkgName, Source};
 use mlua::{FromLua, Lua, RegistryKey, Table};
 use reqwest::Url;
-use std::hash::{Hash, Hasher};
+use std::collections::BTreeSet;
 
 #[derive(Debug)]
 pub struct SourceItem {
@@ -25,12 +25,6 @@ pub struct PackageItem {
   pub table_key: RegistryKey,
 }
 
-impl Hash for PackageItem {
-  fn hash<H: Hasher>(&self, state: &mut H) {
-    self.info.name.hash(state);
-  }
-}
-
 impl PartialEq for PackageItem {
   fn eq(&self, other: &Self) -> bool {
     self.info.name == other.info.name
@@ -39,12 +33,24 @@ impl PartialEq for PackageItem {
 
 impl Eq for PackageItem {}
 
+impl PartialOrd for PackageItem {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+impl Ord for PackageItem {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    self.info.name.cmp(&other.info.name)
+  }
+}
+
 pub struct PackageDelta {
   pub name: Option<PkgName>,
   pub description: Option<Box<str>>,
   pub homepage: Option<Url>,
-  pub depends: Option<Vec<PkgName>>,
-  pub optional_depends: Option<Vec<OptionalDepends>>,
+  pub depends: Option<BTreeSet<PkgName>>,
+  pub optional_depends: Option<BTreeSet<OptionalDepends>>,
   pub table_key: RegistryKey,
 }
 
