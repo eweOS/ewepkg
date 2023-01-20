@@ -5,9 +5,6 @@ use std::num::ParseIntError;
 use std::str::FromStr;
 use thiserror::Error;
 
-#[cfg(feature = "mlua")]
-use mlua::{ExternalResult, FromLua};
-
 fn is_allowed_in_version(c: char) -> bool {
   c.is_ascii_alphanumeric() || ".+~".contains(c)
 }
@@ -196,14 +193,6 @@ impl<'de> Deserialize<'de> for PkgVersion {
     <&'de str>::deserialize(de)?
       .parse()
       .map_err(de::Error::custom)
-  }
-}
-
-#[cfg(feature = "mlua")]
-impl<'lua> FromLua<'lua> for PkgVersion {
-  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua mlua::Lua) -> mlua::Result<Self> {
-    let s: mlua::String = lua.unpack(lua_value)?;
-    std::str::from_utf8(s.as_bytes())?.parse().to_lua_err()
   }
 }
 

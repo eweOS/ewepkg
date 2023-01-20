@@ -12,11 +12,6 @@ use thiserror::Error;
 use url::Url;
 use version::PkgVersion;
 
-#[cfg(feature = "mlua")]
-use crate::lua_helpers::{LuaPath, LuaTableExt, LuaUrl};
-#[cfg(feature = "mlua")]
-use mlua::{ExternalError, ExternalResult, FromLua, Lua, LuaSerdeExt, Table};
-
 // TODO: more strict
 fn assure_pkg_name<S: AsRef<str>>(s: S) -> Result<S, ParseNameError> {
   match s
@@ -69,13 +64,6 @@ impl<'de> Deserialize<'de> for PkgName {
   }
 }
 
-#[cfg(feature = "mlua")]
-impl<'lua> FromLua<'lua> for PkgName {
-  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
-    Ok(Self(assure_pkg_name(lua.unpack(lua_value)?).to_lua_err()?))
-  }
-}
-
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 #[error("package name contains invalid character `{0}`")]
 pub struct ParseNameError(char);
@@ -109,32 +97,6 @@ pub struct Source {
   pub source: Vec<SourceFile>,
 }
 
-#[cfg(feature = "mlua")]
-impl Source {
-  pub fn from_table(table: &Table) -> mlua::Result<Self> {
-    Ok(Self {
-      name: table.get_better_error("name")?,
-      description: table.get_better_error("description")?,
-      version: table.get_better_error("version")?,
-      homepage: table
-        .get_better_error::<Option<LuaUrl>>("homepage")?
-        .map(|x| x.0),
-      build_depends: table
-        .get_better_error::<Option<_>>("build_depends")?
-        .unwrap_or_default(),
-      depends: table
-        .get_better_error::<Option<_>>("depends")?
-        .unwrap_or_default(),
-      optional_depends: table
-        .get_better_error::<Option<_>>("optional_depends")?
-        .unwrap_or_default(),
-      source: table
-        .get_better_error::<Option<_>>("source")?
-        .unwrap_or_default(),
-    })
-  }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptionalDepends {
   pub name: PkgName,
@@ -164,13 +126,6 @@ impl Ord for OptionalDepends {
   }
 }
 
-#[cfg(feature = "mlua")]
-impl<'lua> FromLua<'lua> for OptionalDepends {
-  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
-    lua.from_value(lua_value)
-  }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceFile {
   #[serde(flatten)]
@@ -180,45 +135,6 @@ pub struct SourceFile {
   #[serde(default)]
   #[serde(skip_serializing_if = "std::ops::Not::not")]
   pub skip_checksum: bool,
-}
-
-#[cfg(feature = "mlua")]
-impl SourceFile {
-  pub fn from_table(table: &Table) -> mlua::Result<Self> {
-    let http_src: Option<LuaUrl> = table.get_better_error("url")?;
-    let local_src: Option<LuaPath> = table.get_better_error("path")?;
-    let location = match (http_src, local_src) {
-      (Some(LuaUrl(url)), None) => SourceLocation::Http(url),
-      (None, Some(LuaPath(path))) => SourceLocation::Local(path),
-      (Some(_), Some(_)) => return Err("can't decide whether to use URL or path".to_lua_err()),
-      (None, None) => return Err("no source location defined".to_lua_err()),
-    };
-
-    let mut checksums = BTreeMap::new();
-    for (kind, key) in [
-      (ChecksumKind::Sha256, "sha256sum"),
-      (ChecksumKind::Blake2, "blake2sum"),
-    ] {
-      if let Some(s) = table.get_better_error(key)? {
-        checksums.insert(kind, s);
-      }
-    }
-
-    let skip_checksum = table.get_better_error("skip_checksum")?;
-
-    Ok(Self {
-      location,
-      checksums,
-      skip_checksum,
-    })
-  }
-}
-
-#[cfg(feature = "mlua")]
-impl<'lua> FromLua<'lua> for SourceFile {
-  fn from_lua(lua_value: mlua::Value<'lua>, lua: &'lua Lua) -> mlua::Result<Self> {
-    Self::from_table(&lua.unpack(lua_value)?)
-  }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
