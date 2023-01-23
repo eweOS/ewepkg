@@ -1,4 +1,4 @@
-// Copies from Arch Linux"s llvm PKGBUILD
+// Taken from Arch Linux"s llvm PKGBUILD
 // This is a showcase of packaging multiple packages from a single source.
 
 let version = "15.0.7";
@@ -8,13 +8,13 @@ let source_base = `https://github.com/llvm/llvm-project/releases/download/llvmor
   name: "llvm",
   description: "Compiler infrastructure",
   version: `${version}-1`,
-  architecture: "any",
+  // architecture: "any",
   homepage: "https://llvm.org",
-  license: ["custom:Apache 2.0 with LLVM Exception"],
+  // license: ["custom:Apache 2.0 with LLVM Exception"],
   build_depends: [
     "cmake", "ninja", "zlib", "zstd", "libffi", "libedit", "ncurses",
     "libxml2", "python-setuptools", "python-psutil", "python-sphinx",
-    "python-recommonmark"
+    "python-recommonmark",
   ],
   source: [#{
     url: `${source_base}/llvm-${version}.src.tar.xz`,
@@ -67,32 +67,31 @@ let source_base = `https://github.com/llvm/llvm-project/releases/download/llvmor
 
   packages: [#{
     depends: ["llvm-libs", "perl"],
+    pack: |package_dir| `
+      cd llvm-${version}.src/build
 
-    pack: `
-      cd llvm-$pkgver.src/build
-
-      DESTDIR="$pkgdir" ninja install
+      DESTDIR="${package_dir}" ninja install
 
       # Include lit for running lit-based tests in other projects
       pushd ../utils/lit
-      python3 setup.py install --root="$pkgdir" -O1
+      python3 setup.py install --root="${package_dir}" -O1
       popd
 
       # The runtime libraries go into llvm-libs
-      mv -f "$pkgdir"/usr/lib/lib{LLVM,LTO,Remarks}*.so* "$srcdir"
-      mv -f "$pkgdir"/usr/lib/LLVMgold.so "$srcdir"
+      mv -f "${package_dir}"/usr/lib/lib{LLVM,LTO,Remarks}*.so* "${source_dir}"
+      mv -f "${package_dir}"/usr/lib/LLVMgold.so "${source_dir}"
 
       if [[ $CARCH == x86_64 ]]; then
         # Needed for multilib (https://bugs.archlinux.org/task/29951)
         # Header stub is taken from Fedora
-        mv "$pkgdir/usr/include/llvm/Config/llvm-config"{,-64}.h
-        cp "$srcdir/llvm-config.h" "$pkgdir/usr/include/llvm/Config/llvm-config.h"
+        mv "${package_dir}/usr/include/llvm/Config/llvm-config"{,-64}.h
+        cp "${source_dir}/llvm-config.h" "${package_dir}/usr/include/llvm/Config/llvm-config.h"
       fi
 
       # Remove documentation sources
-      rm -r "$pkgdir"/usr/share/doc/llvm/html/{_sources,.buildinfo}
+      rm -r "${package_dir}"/usr/share/doc/llvm/html/{_sources,.buildinfo}
 
-      install -Dm644 ../LICENSE.TXT "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+      install -Dm644 ../LICENSE.TXT "${package_dir}/usr/share/licenses/llvm/LICENSE"
     `,
   }, #{
     name: "llvm-libs",
@@ -101,8 +100,7 @@ let source_base = `https://github.com/llvm/llvm-project/releases/download/llvmor
       "gcc-libs", "zlib", "zstd", "libffi", "libedit", "ncurses",
       "libxml2"
     ],
-
-    pack: `
+    pack: |package_dir| `
       install -d "${package_dir}/usr/lib"
       cp -P \
         "${source_dir}"/lib{LLVM,LTO,Remarks}*.so* \
@@ -111,11 +109,11 @@ let source_base = `https://github.com/llvm/llvm-project/releases/download/llvmor
 
       # Symlink LLVMgold.so from /usr/lib/bfd-plugins
       # https://bugs.archlinux.org/task/28479
-      install -d "$pkgdir/usr/lib/bfd-plugins"
+      install -d "${package_dir}/usr/lib/bfd-plugins"
       ln -s ../LLVMgold.so "${package_dir}/usr/lib/bfd-plugins/LLVMgold.so"
 
-      install -Dm644 "${source_dir}/llvm-$pkgver.src/LICENSE.TXT" \
-        "${package_dir}/usr/share/licenses/$pkgname/LICENSE"
-    `
+      install -Dm644 "${source_dir}/llvm-${version}.src/LICENSE.TXT" \
+        "${package_dir}/usr/share/licenses/llvm-libs/LICENSE"
+    `,
   }]
 }

@@ -158,6 +158,17 @@ impl Execution {
   }
 }
 
+fn fnptr_from_dynamic(x: Dynamic) -> Result<FnPtr, Box<EvalAltResult>> {
+  let type_name = x.type_name();
+  x.try_cast().ok_or_else(|| {
+    Box::new(ErrorMismatchDataType(
+      "Fn".into(),
+      type_name.into(),
+      Position::NONE,
+    ))
+  })
+}
+
 // TODO: architecture
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageMeta {
@@ -178,24 +189,24 @@ pub struct PackageMeta {
   pub optional_depends: BTreeSet<OptionalDepends>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct PackageDelta {
-  pub name: Option<PkgName>,
-  pub description: Option<Box<str>>,
-  pub version: Option<PkgVersion>,
-  pub homepage: Option<Url>,
+#[derive(Debug, Deserialize)]
+struct PackageDelta {
+  name: Option<PkgName>,
+  description: Option<Box<str>>,
+  version: Option<PkgVersion>,
+  homepage: Option<Url>,
 
   #[serde(default)]
-  pub depends: BTreeSet<PkgName>,
+  depends: BTreeSet<PkgName>,
 
   #[serde(default)]
-  pub optional_depends: BTreeSet<OptionalDepends>,
+  optional_depends: BTreeSet<OptionalDepends>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Package {
   pub meta: PackageMeta,
-  pub pack: Execution,
+  pub pack: Option<FnPtr>,
 }
 
 impl Package {
@@ -211,15 +222,7 @@ impl Package {
         Position::NONE,
       ))
     })?;
-    let pack = map
-      .remove("pack")
-      .map(Execution::from_dynamic)
-      .ok_or_else(|| {
-        Box::new(ErrorRuntime(
-          Dynamic::from("missing `pack` in package"),
-          Position::NONE,
-        ))
-      })??;
+    let pack = map.remove("pack").map(fnptr_from_dynamic).transpose()?;
     drop(map);
     let mut delta: PackageDelta = from_dynamic(value)?;
     let meta = PackageMeta {
@@ -308,16 +311,17 @@ impl Source {
     let type_name = value.type_name();
     let mut map = value.write_lock::<Map>().ok_or_else(|| {
       Box::new(ErrorMismatchDataType(
-        "Map".into(),
+        "map".into(),
         type_name.into(),
         Position::NONE,
       ))
     })?;
-    let mut fns = [None, None, None, None];
-    for (i, name) in ["prepare", "build", "check", "pack"].iter().enumerate() {
-      fns[i] = map.remove(*name).map(Execution::from_dynamic).transpose()?;
+    let mut execs = [None, None, None];
+    for (i, name) in ["prepare", "build", "check"].iter().enumerate() {
+      execs[i] = map.remove(*name).map(Execution::from_dynamic).transpose()?;
     }
-    let [prepare, build, check, pack] = fns;
+    let [prepare, build, check] = execs;
+    let pack = map.remove("pack").map(fnptr_from_dynamic).transpose()?;
 
     let packages_repr = map
       .remove("packages")
@@ -338,17 +342,15 @@ impl Source {
         Position::NONE,
       )));
     }
-    if pack.is_none() && packages_repr.is_none() {
-      return Err(Box::new(ErrorRuntime(
-        Dynamic::from("no package specified; specify `pack` or `packages`"),
-        Position::NONE,
-      )));
-    }
 
     drop(map);
     let meta: SourceMeta = from_dynamic(value)?;
     let mut packages = BTreeSet::new();
-    if let Some(pack) = pack {
+    if let Some(packages_repr) = packages_repr {
+      for mut package in packages_repr {
+        packages.insert(Package::from_dynamic_and_source_meta(&mut package, &meta)?);
+      }
+    } else {
       packages.insert(Package {
         meta: PackageMeta {
           name: meta.name.clone(),
@@ -360,10 +362,6 @@ impl Source {
         },
         pack,
       });
-    } else if let Some(packages_repr) = packages_repr {
-      for mut package in packages_repr {
-        packages.insert(Package::from_dynamic_and_source_meta(&mut package, &meta)?);
-      }
     }
 
     Ok(Self {

@@ -1,0 +1,5 @@
+#{
+  name: "minimum",
+  description: "Minimum representation of a build script",
+  version: "1",
+}
