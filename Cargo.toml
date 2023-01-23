@@ -1,19 +1,16 @@
-[workspace]
-members = ["ewe", "ewe-build", "commons"]
+[package]
+name = "ewepkg"
+version = "0.1.0"
+edition = "2021"
 
-[workspace.dependencies]
+[[bin]]
+name = "ewe"
+path = "src/main.rs"
+
+[dependencies]
 anyhow = "1.0.68"
-clap = { version = "4.0.32", features = ["derive"] }
-ewe-commons = { path = "commons" }
-once_cell = "1.17.0"
-reqwest = "0.11.13"
+clap = { version = "4.1.1", features = ["derive"] }
+rhai = { version = "1.12.0", path = "../rhai", features = ["serde", "sync"] }
 serde = { version = "1.0.152", features = ["derive"] }
-serde_json = "1.0.91"
-tempfile = "3.3.0"
-
-[profile.release]
-strip = true
-opt-level = "z"
-codegen-units = 1
-panic = "abort"
-lto = true
+thiserror = "1.0.38"
+url = { version = "2.3.1", features = ["serde"] }

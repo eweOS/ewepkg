@@ -80,6 +80,16 @@ pub fn cmp_version(mut a: &str, mut b: &str) -> Ordering {
   Equal
 }
 
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum ParseVersionError {
+  #[error("failed to parse epoch: {0}")]
+  Epoch(#[from] ParseIntError),
+  #[error("upstream version contains invalid character `{0}`")]
+  Upstream(char),
+  #[error("revision contains invalid character `{0}`")]
+  Revision(char),
+}
+
 #[derive(Debug, Clone)]
 pub struct PkgVersion {
   epoch: u32,
@@ -194,16 +204,6 @@ impl<'de> Deserialize<'de> for PkgVersion {
       .parse()
       .map_err(de::Error::custom)
   }
-}
-
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub enum ParseVersionError {
-  #[error("failed to parse epoch: {0}")]
-  Epoch(#[from] ParseIntError),
-  #[error("upstream version contains invalid character `{0}`")]
-  Upstream(char),
-  #[error("revision contains invalid character `{0}`")]
-  Revision(char),
 }
 
 #[cfg(test)]

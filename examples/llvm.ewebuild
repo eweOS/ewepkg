@@ -1,0 +1,121 @@
+// Copies from Arch Linux"s llvm PKGBUILD
+// This is a showcase of packaging multiple packages from a single source.
+
+let version = "15.0.7";
+let source_base = `https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}`;
+
+#{
+  name: "llvm",
+  description: "Compiler infrastructure",
+  version: `${version}-1`,
+  architecture: "any",
+  homepage: "https://llvm.org",
+  license: ["custom:Apache 2.0 with LLVM Exception"],
+  build_depends: [
+    "cmake", "ninja", "zlib", "zstd", "libffi", "libedit", "ncurses",
+    "libxml2", "python-setuptools", "python-psutil", "python-sphinx",
+    "python-recommonmark"
+  ],
+  source: [#{
+    url: `${source_base}/llvm-${version}.src.tar.xz`,
+    sha256sum: "4ad8b2cc8003c86d0078d15d987d84e3a739f24aae9033865c027abae93ee7a4",
+  }, #{
+    url: `${source_base}/cmake-${version}.src.tar.xz`,
+    sha256sum: "8986f29b634fdaa9862eedda78513969fe9788301c9f2d938f4c10a3e7a3e7ea",
+  }, #{
+    path: "llvm-config.h",
+    sha256sum: "597dc5968c695bbdbb0eac9e8eb5117fcd2773bc91edf5ec103ecffffab8bc48",
+  }],
+
+  prepare: `
+    mv cmake{-${version}.src,}
+    cd llvm-${version}.src
+    mkdir build
+  `,
+
+  build: `
+    cd llvm-$pkgver.src/build
+
+    # Build only minimal debug info to reduce size
+    CFLAGS=${"${CFLAGS/-g /-g1 }"}
+    CXXFLAGS=${"${CXXFLAGS/-g /-g1 }"}
+
+    local cmake_args=(
+      -G Ninja
+      -DCMAKE_BUILD_TYPE=Release
+      -DCMAKE_INSTALL_DOCDIR=share/doc
+      -DCMAKE_INSTALL_PREFIX=/usr
+      -DCMAKE_SKIP_RPATH=ON
+      -DLLVM_BINUTILS_INCDIR=/usr/include
+      -DLLVM_BUILD_DOCS=ON
+      -DLLVM_BUILD_LLVM_DYLIB=ON
+      -DLLVM_BUILD_TESTS=ON
+      -DLLVM_ENABLE_BINDINGS=OFF
+      -DLLVM_ENABLE_FFI=ON
+      -DLLVM_ENABLE_RTTI=ON
+      -DLLVM_ENABLE_SPHINX=ON
+      -DLLVM_HOST_TRIPLE=$CHOST
+      -DLLVM_INCLUDE_BENCHMARKS=OFF
+      -DLLVM_INSTALL_UTILS=ON
+      -DLLVM_LINK_LLVM_DYLIB=ON
+      -DLLVM_USE_PERF=ON
+      -DSPHINX_WARNINGS_AS_ERRORS=OFF
+    )
+    cmake .. "${"${cmake_args[@]}"}"
+    ninja
+  `,
+
+  packages: [#{
+    depends: ["llvm-libs", "perl"],
+
+    pack: `
+      cd llvm-$pkgver.src/build
+
+      DESTDIR="$pkgdir" ninja install
+
+      # Include lit for running lit-based tests in other projects
+      pushd ../utils/lit
+      python3 setup.py install --root="$pkgdir" -O1
+      popd
+
+      # The runtime libraries go into llvm-libs
+      mv -f "$pkgdir"/usr/lib/lib{LLVM,LTO,Remarks}*.so* "$srcdir"
+      mv -f "$pkgdir"/usr/lib/LLVMgold.so "$srcdir"
+
+      if [[ $CARCH == x86_64 ]]; then
+        # Needed for multilib (https://bugs.archlinux.org/task/29951)
+        # Header stub is taken from Fedora
+        mv "$pkgdir/usr/include/llvm/Config/llvm-config"{,-64}.h
+        cp "$srcdir/llvm-config.h" "$pkgdir/usr/include/llvm/Config/llvm-config.h"
+      fi
+
+      # Remove documentation sources
+      rm -r "$pkgdir"/usr/share/doc/llvm/html/{_sources,.buildinfo}
+
+      install -Dm644 ../LICENSE.TXT "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    `,
+  }, #{
+    name: "llvm-libs",
+    description: "",
+    depends: [
+      "gcc-libs", "zlib", "zstd", "libffi", "libedit", "ncurses",
+      "libxml2"
+    ],
+
+    pack: `
+      install -d "${package_dir}/usr/lib"
+      cp -P \
+        "${source_dir}"/lib{LLVM,LTO,Remarks}*.so* \
+        "${source_dir}"/LLVMgold.so \
+        "${package_dir}/usr/lib/"
+
+      # Symlink LLVMgold.so from /usr/lib/bfd-plugins
+      # https://bugs.archlinux.org/task/28479
+      install -d "$pkgdir/usr/lib/bfd-plugins"
+      ln -s ../LLVMgold.so "${package_dir}/usr/lib/bfd-plugins/LLVMgold.so"
+
+      install -Dm644 "${source_dir}/llvm-$pkgver.src/LICENSE.TXT" \
+        "${package_dir}/usr/share/licenses/$pkgname/LICENSE"
+    `
+  }]
+}
