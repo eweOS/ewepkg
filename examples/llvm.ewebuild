@@ -34,7 +34,7 @@ let source_base = `https://github.com/llvm/llvm-project/releases/download/llvmor
   `,
 
   build: `
-    cd llvm-$pkgver.src/build
+    cd llvm-${version}.src/build
 
     # Build only minimal debug info to reduce size
     CFLAGS=${"${CFLAGS/-g /-g1 }"}

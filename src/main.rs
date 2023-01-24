@@ -1,7 +1,7 @@
 mod build;
 mod source;
-mod version;
 mod util;
+mod version;
 
 use build::BuildScript;
 use clap::{Parser, Subcommand};

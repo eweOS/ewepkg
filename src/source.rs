@@ -107,7 +107,7 @@ pub enum SourceLocation {
 }
 
 impl SourceLocation {
-  fn file_name(&self) -> Option<&str> {
+  pub fn file_name(&self) -> Option<&str> {
     match self {
       Self::Http(url) => url.path_segments()?.last(),
       Self::Local(path) => path.file_name()?.to_str(),
