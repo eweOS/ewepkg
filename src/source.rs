@@ -2,6 +2,7 @@ use crate::version::PkgVersion;
 use rhai::serde::from_dynamic;
 use rhai::EvalAltResult::{self, ErrorMismatchDataType, ErrorRuntime};
 use rhai::{Dynamic, FnPtr, Map, Position};
+use serde::de::Error;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
@@ -97,25 +98,30 @@ impl Ord for OptionalDepends {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SourceFile {
-  #[serde(flatten)]
-  pub location: SourceLocation,
-
-  #[serde(flatten)]
-  pub checksums: BTreeMap<ChecksumKind, Box<str>>,
-
-  #[serde(default)]
-  #[serde(skip_serializing_if = "std::ops::Not::not")]
-  pub skip_checksum: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SourceLocation {
   #[serde(rename = "url")]
   Http(Url),
 
   #[serde(rename = "path")]
   Local(Box<Path>),
+}
+
+impl SourceLocation {
+  fn file_name(&self) -> Option<&str> {
+    match self {
+      Self::Http(url) => url.path_segments()?.last(),
+      Self::Local(path) => path.file_name()?.to_str(),
+    }
+  }
+}
+
+impl Display for SourceLocation {
+  fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    match self {
+      SourceLocation::Http(url) => write!(f, "{}", url),
+      SourceLocation::Local(path) => write!(f, "{}", path.display()),
+    }
+  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -125,6 +131,70 @@ pub enum ChecksumKind {
 
   #[serde(rename = "blake2sum")]
   Blake2,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SourceFileHelper {
+  #[serde(flatten)]
+  pub location: SourceLocation,
+
+  #[serde(default)]
+  pub rename: Option<Box<str>>,
+
+  #[serde(flatten)]
+  pub checksums: BTreeMap<ChecksumKind, Box<str>>,
+
+  #[serde(default)]
+  pub skip_checksum: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceFile {
+  #[serde(flatten)]
+  pub location: SourceLocation,
+
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub rename: Option<Box<str>>,
+
+  #[serde(flatten)]
+  pub checksums: BTreeMap<ChecksumKind, Box<str>>,
+
+  #[serde(skip_serializing_if = "std::ops::Not::not")]
+  pub skip_checksum: bool,
+}
+
+impl SourceFile {
+  pub fn file_name(&self) -> &str {
+    self.rename.as_deref().unwrap_or_else(|| {
+      self
+        .location
+        .file_name()
+        .expect("location should include a file name")
+    })
+  }
+}
+
+impl<'de> Deserialize<'de> for SourceFile {
+  fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+    let SourceFileHelper {
+      location,
+      rename,
+      checksums,
+      skip_checksum,
+    } = SourceFileHelper::deserialize(de)?;
+    if rename.is_none() && location.file_name().is_none() {
+      return Err(D::Error::custom("no file name given"));
+    }
+    if !skip_checksum && checksums.is_empty() {
+      return Err(D::Error::custom("no checksum given or `skip_checksum`"));
+    }
+    Ok(Self {
+      location,
+      rename,
+      checksums,
+      skip_checksum,
+    })
+  }
 }
 
 #[derive(Clone)]

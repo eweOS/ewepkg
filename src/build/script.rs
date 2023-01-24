@@ -1,8 +1,58 @@
-use crate::source::{Execution, Source};
+use crate::source::{Execution, Source, SourceFile, SourceLocation};
+use crate::util::mv_async;
+use futures::stream::FuturesUnordered;
+use futures::TryStreamExt;
+use reqwest::Client;
 use rhai::{Dynamic, Engine, FnPtr, Scope, AST};
 use std::fs::read_to_string;
 use std::path::Path;
 use tempfile::{tempdir, TempDir};
+use tokio::fs::File;
+use tokio::io;
+use tokio::runtime::Runtime;
+use tokio_util::io::StreamReader;
+
+async fn fetch_single_source(
+  source_dir: &Path,
+  file: &SourceFile,
+  client: Client,
+) -> anyhow::Result<()> {
+  println!("{} pushed", file.location);
+  let dst = source_dir.with_file_name(file.file_name());
+  match &file.location {
+    SourceLocation::Http(url) => {
+      let resp = client.get(url.clone()).send().await?.error_for_status()?;
+      println!("{url} content length: {:?}", resp.content_length());
+      let stream = resp
+        .bytes_stream()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
+      let mut reader = StreamReader::new(stream);
+      let mut file = File::create(dst).await?;
+      io::copy(&mut reader, &mut file).await?;
+      println!("download {url} complete");
+    }
+    SourceLocation::Local(path) => mv_async(path, dst).await?,
+  }
+  println!("{} complete", file.location);
+  Ok(())
+}
+
+async fn fetch_source(source_dir: &Path, files: &[SourceFile]) -> anyhow::Result<()> {
+  const PARALLEL: usize = 5;
+  let mut iter = files.iter();
+  let mut pool = FuturesUnordered::new();
+  let client = Client::new();
+
+  for file in iter.by_ref().take(PARALLEL) {
+    pool.push(fetch_single_source(source_dir, file, client.clone()));
+  }
+  while let Some(()) = pool.try_next().await? {
+    if let Some(file) = iter.next() {
+      pool.push(fetch_single_source(source_dir, file, client.clone()));
+    }
+  }
+  Ok(())
+}
 
 #[derive(Debug)]
 pub struct BuildScript {
@@ -60,7 +110,11 @@ impl BuildScript {
   }
 
   pub fn prepare(&self) -> anyhow::Result<()> {
-    // TODO: fetch source
+    let rt = Runtime::new()?;
+    rt.block_on(fetch_source(
+      self.source_dir.path(),
+      &self.source.meta.source,
+    ))?;
     // TODO: dependency check
     if let Some(prepare) = &self.source.prepare {
       self.exec(self.source_dir.path(), prepare)?;

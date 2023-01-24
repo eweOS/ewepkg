@@ -1,9 +1,10 @@
-mod script;
+mod build;
 mod source;
 mod version;
+mod util;
 
+use build::BuildScript;
 use clap::{Parser, Subcommand};
-use script::BuildScript;
 use std::path::PathBuf;
 
 #[derive(Parser)]

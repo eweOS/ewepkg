@@ -243,7 +243,7 @@ mod tests {
     assert_eq!(cmp_lexical("+dfsg", ""), Greater);
     assert_eq!(cmp_numerical("1", "01"), Equal);
     assert_eq!(cmp_numerical("19260817", "19530615"), Less);
-    // assert!(ver("1.14.51~beta4-999") < ver("1.14.51-4"));
-    assert!(dbg!(ver("0.12.10+dfsg1-3")) == dbg!(ver("0.12.10+dfsg01-3")));
+    assert_eq!(ver("1.14.51~beta4-999").cmp(&ver("1.14.51-1")), Less);
+    assert_eq!(ver("0.12.10+dfsg1-3"), ver("0.12.10+dfsg01-3"));
   }
 }
