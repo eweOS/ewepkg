@@ -28,7 +28,9 @@ let source_base = `https://github.com/llvm/llvm-project/releases/download/llvmor
   }],
 
   prepare: `
-    mv cmake{-${version}.src,}
+    mv cmake-${version}.src/cmake-${version}.src cmake
+    mv llvm-${version}.src llvm_
+    mv llvm_/llvm-${version}.src .
     cd llvm-${version}.src
     mkdir build
   `,
@@ -39,8 +41,10 @@ let source_base = `https://github.com/llvm/llvm-project/releases/download/llvmor
     # Build only minimal debug info to reduce size
     CFLAGS=${"${CFLAGS/-g /-g1 }"}
     CXXFLAGS=${"${CXXFLAGS/-g /-g1 }"}
+    CARCH="x86_64"
+    CHOST="x86_64-pc-linux-gnu"
 
-    local cmake_args=(
+    cmake_args=(
       -G Ninja
       -DCMAKE_BUILD_TYPE=Release
       -DCMAKE_INSTALL_DOCDIR=share/doc

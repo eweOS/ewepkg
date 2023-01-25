@@ -1,5 +1,6 @@
 use crate::build::fetch::fetch_source;
 use crate::source::{Execution, Source};
+use crate::util::segment_info;
 use anyhow::bail;
 use rhai::{Dynamic, Engine, FnPtr, Scope, AST};
 use std::fs::read_to_string;
@@ -28,7 +29,7 @@ impl BuildScript {
 
     scope.push("source_dir", source_dir_path);
 
-    let ast = engine.compile_with_scope(&mut scope, &read_to_string(path)?)?;
+    let ast = engine.compile_with_scope(&scope, read_to_string(path)?)?;
     let mut value = engine.eval_ast_with_scope(&mut scope, &ast)?;
     let source = Source::from_dynamic(&mut value)?;
     Ok(Self {
@@ -71,10 +72,15 @@ impl BuildScript {
 
   pub fn prepare(&self) -> anyhow::Result<()> {
     let source_dir = self.source_dir.path();
-    println!(":: Fetching source...");
-    fetch_source(source_dir, &self.source.meta.source)?;
+
     // TODO: dependency check
-    println!(":: Executing `prepare`...");
+    segment_info("Checking dependencies...");
+    println!("Not implemented, skipping");
+
+    segment_info("Fetching source...");
+    fetch_source(source_dir, &self.source.meta.source)?;
+
+    segment_info("Running `prepare`...");
     if let Some(prepare) = &self.source.prepare {
       self.exec(source_dir, prepare)?;
     }
@@ -82,6 +88,7 @@ impl BuildScript {
   }
 
   pub fn build(&self) -> anyhow::Result<()> {
+    segment_info("Running `build`...");
     if let Some(build) = &self.source.build {
       self.exec(self.source_dir.path(), build)?;
     }

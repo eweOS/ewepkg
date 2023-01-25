@@ -120,7 +120,7 @@ impl FromStr for PkgVersion {
       .map(|(e, s)| (Some(e), s))
       .unwrap_or((None, s));
     let epoch = epoch
-      .map(|e| u32::from_str_radix(e, 10))
+      .map(|e| e.parse::<u32>())
       .transpose()?
       .unwrap_or(0);
     let (upstream, revision) = s

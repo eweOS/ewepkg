@@ -1,3 +1,4 @@
+use console::style;
 use tempfile::tempfile;
 use tokio::fs::File;
 use tokio::io;
@@ -21,4 +22,8 @@ where
 pub async fn tempfile_async() -> io::Result<File> {
   let std_file = asyncify(tempfile).await?;
   Ok(File::from_std(std_file))
+}
+
+pub fn segment_info(msg: &str) {
+  println!("{} {}", style("::").green().bold(), style(msg).bold())
 }
