@@ -99,6 +99,7 @@ async fn download(
   Ok(())
 }
 
+// TODO: verify
 async fn fetch_single_source_inner(
   source_dir: &Path,
   file: &SourceFile,
@@ -177,6 +178,10 @@ async fn fetch_single_source(
 }
 
 async fn fetch_source_inner(source_dir: &Path, files: &[SourceFile]) -> anyhow::Result<()> {
+  if files.is_empty() {
+    println!("No source specified, skipping");
+  }
+
   const PARALLEL: usize = 5;
   let mut iter = files.iter();
   let mut pool = FuturesUnordered::new();

@@ -336,7 +336,6 @@ impl Ord for Package {
     self.meta.name.cmp(&other.meta.name)
   }
 }
-
 // TODO: architecture, license
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceMeta {
@@ -391,8 +390,8 @@ impl Source {
       execs[i] = map.remove(*name).map(Execution::from_dynamic).transpose()?;
     }
     let [prepare, build, check] = execs;
-    let pack = map.remove("pack").map(fnptr_from_dynamic).transpose()?;
 
+    let pack = map.remove("pack").map(fnptr_from_dynamic).transpose()?;
     let packages_repr = map
       .remove("packages")
       .map(|x| {
@@ -405,7 +404,6 @@ impl Source {
         })
       })
       .transpose()?;
-
     if pack.is_some() && packages_repr.is_some() {
       return Err(Box::new(ErrorRuntime(
         Dynamic::from("field `pack` and `packages` conflicts"),

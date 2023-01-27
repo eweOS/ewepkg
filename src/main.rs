@@ -17,13 +17,21 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
-  Build { path: PathBuf },
+  Build {
+    path: PathBuf,
+  },
+  #[command(name = "__internal_package_inside_fakeroot", hide = true)]
+  Package {
+    path: PathBuf,
+    source_dir: PathBuf,
+  },
 }
 
 fn run() -> anyhow::Result<()> {
   let args = Args::parse();
   match args.cmd {
     Command::Build { path } => build::run(path)?,
+    Command::Package { path, source_dir } => build::run_package(path, source_dir)?,
   }
   Ok(())
 }
