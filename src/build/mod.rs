@@ -1,21 +1,15 @@
 mod fetch;
 mod script;
 
+use crate::segment_info;
 use anyhow::bail;
-use console::style;
 use script::{BuildScript, PackScript};
 use std::path::PathBuf;
 
 pub fn run(path: PathBuf) -> anyhow::Result<()> {
   let script = BuildScript::new(path)?;
   let source = &script.source().meta;
-  println!(
-    "{} {} {} {}",
-    style("::").green().bold(),
-    style("Starting building:").bold(),
-    source.name,
-    source.version,
-  );
+  segment_info!("Starting building:", "{} {}", source.name, source.version,);
   script.prepare()?;
   script.build()?;
   script.pack()?;

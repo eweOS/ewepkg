@@ -1,4 +1,3 @@
-use console::style;
 use tempfile::tempfile;
 use tokio::fs::File;
 use tokio::io;
@@ -24,6 +23,20 @@ pub async fn tempfile_async() -> io::Result<File> {
   Ok(File::from_std(std_file))
 }
 
-pub fn segment_info(msg: &str) {
-  println!("{} {}", style("::").green().bold(), style(msg).bold())
+#[macro_export]
+macro_rules! segment_info {
+  ($msg:expr) => {
+    println!(
+      "{} {}",
+      console::style("::").green().bold(),
+      console::style($msg).bold()
+    );
+  };
+  ($msg:expr, $($arg:tt)*) => {
+    print!("{} {} ",
+      console::style("::").green().bold(),
+      console::style($msg).bold()
+    );
+    println!($($arg)*);
+  };
 }

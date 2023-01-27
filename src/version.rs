@@ -97,20 +97,6 @@ pub struct PkgVersion {
   revision: Option<Box<str>>,
 }
 
-impl PkgVersion {
-  pub fn epoch(&self) -> u32 {
-    self.epoch
-  }
-
-  pub fn upstream(&self) -> &str {
-    &self.upstream
-  }
-
-  pub fn revision(&self) -> Option<&str> {
-    self.revision.as_deref()
-  }
-}
-
 impl FromStr for PkgVersion {
   type Err = ParseVersionError;
 

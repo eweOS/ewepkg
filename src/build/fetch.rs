@@ -10,7 +10,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 use tokio::fs::{copy, metadata, File as AsyncFile};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
-use tokio::runtime::Runtime;
+use tokio::runtime::Builder as RtBuilder;
 use xz2::read::XzDecoder;
 
 const PB_STYLE: &str =
@@ -207,11 +207,10 @@ async fn fetch_source_inner(source_dir: &Path, files: &[SourceFile]) -> anyhow::
       ));
     }
   }
-  // m.clear()?;
   Ok(())
 }
 
 pub fn fetch_source(source_dir: &Path, files: &[SourceFile]) -> anyhow::Result<()> {
-  let rt = Runtime::new()?;
+  let rt = RtBuilder::new_current_thread().build()?;
   rt.block_on(fetch_source_inner(source_dir, files))
 }

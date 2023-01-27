@@ -18,13 +18,11 @@ struct Args {
 #[derive(Subcommand)]
 enum Command {
   Build {
+    #[arg(default_value = "ewebuild")]
     path: PathBuf,
   },
   #[command(name = "__internal_package_inside_fakeroot", hide = true)]
-  Package {
-    path: PathBuf,
-    source_dir: PathBuf,
-  },
+  Package { path: PathBuf, source_dir: PathBuf },
 }
 
 fn run() -> anyhow::Result<()> {
@@ -38,7 +36,7 @@ fn run() -> anyhow::Result<()> {
 
 fn main() {
   if let Err(error) = run() {
-    eprint!("{} error: {error}", style("!!").red().bold());
+    eprint!("{} {error}", style("error:").red().bold());
     if let Some(x) = error.chain().nth(1) {
       eprintln!(" ({x})");
     } else {

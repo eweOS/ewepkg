@@ -1,8 +1,7 @@
 use crate::build::fetch::fetch_source;
+use crate::segment_info;
 use crate::source::{Execution, Package, Source};
-use crate::util::segment_info;
 use anyhow::bail;
-use console::style;
 use rhai::{Dynamic, Engine, FnPtr, FuncArgs, Scope, AST};
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -79,13 +78,13 @@ impl BuildScript {
     let source_dir = self.source_dir.path();
 
     // TODO: dependency check
-    segment_info("Checking dependencies...");
+    segment_info!("Checking dependencies...");
     println!("Not implemented, skipping");
 
-    segment_info("Fetching source...");
+    segment_info!("Fetching source...");
     fetch_source(source_dir, &self.source.meta.source)?;
 
-    segment_info("Preparing source...");
+    segment_info!("Preparing source...");
     if let Some(prepare) = &self.source.prepare {
       self.exec(source_dir, prepare, ())?;
     }
@@ -93,7 +92,7 @@ impl BuildScript {
   }
 
   pub fn build(&self) -> anyhow::Result<()> {
-    segment_info("Building package...");
+    segment_info!("Building package...");
     if let Some(build) = &self.source.build {
       self.exec(self.source_dir.path(), build, ())?;
     }
@@ -101,7 +100,7 @@ impl BuildScript {
   }
 
   pub fn pack(&self) -> anyhow::Result<()> {
-    segment_info("Entering fakeroot...");
+    segment_info!("Entering fakeroot...");
     let exe = std::env::current_exe()?;
     let status = Command::new("fakeroot")
       .args([
@@ -114,7 +113,7 @@ impl BuildScript {
     if !status.success() {
       bail!("fakeroot exited with {status}");
     }
-    segment_info("Exiting fakeroot...");
+    segment_info!("Exiting fakeroot...");
     Ok(())
   }
 }
@@ -170,12 +169,11 @@ impl PackScript {
 
   pub fn pack(&self) -> anyhow::Result<()> {
     for package in &self.packages {
-      println!(
-        "{} {} {} {}",
-        style("::").green().bold(),
-        style("Starting packing:").bold(),
+      segment_info!(
+        "Starting packing:",
+        "{} {}",
         package.meta.name,
-        package.meta.version,
+        package.meta.version
       );
       let package_dir = tempdir()?;
       let path = package_dir
