@@ -119,10 +119,7 @@ impl FromStr for PkgVersion {
       .split_once(':')
       .map(|(e, s)| (Some(e), s))
       .unwrap_or((None, s));
-    let epoch = epoch
-      .map(|e| e.parse::<u32>())
-      .transpose()?
-      .unwrap_or(0);
+    let epoch = epoch.map(|e| e.parse::<u32>()).transpose()?.unwrap_or(0);
     let (upstream, revision) = s
       .rsplit_once('-')
       .map(|(u, r)| (u, Some(r)))

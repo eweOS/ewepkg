@@ -2,8 +2,8 @@ use crate::build::fetch::fetch_source;
 use crate::source::{Execution, Source};
 use crate::util::segment_info;
 use anyhow::bail;
-use rhai::{Dynamic, Engine, FnPtr, Scope, AST};
-use std::fs::read_to_string;
+use rhai::{Dynamic, Engine, FnPtr, FuncArgs, Scope, AST};
+use std::fs::{read_to_string, File};
 use std::path::Path;
 use std::process::Command;
 use tempfile::{tempdir, TempDir};
@@ -55,18 +55,18 @@ impl BuildScript {
     Ok(())
   }
 
-  fn exec_fn(&self, dir: impl AsRef<Path>, f: &FnPtr) -> anyhow::Result<()> {
-    let result: Dynamic = f.call(&self.engine, &self.ast, ())?;
+  fn exec_fn(&self, dir: impl AsRef<Path>, f: &FnPtr, args: impl FuncArgs) -> anyhow::Result<()> {
+    let result: Dynamic = f.call(&self.engine, &self.ast, args)?;
     if let Ok(x) = result.into_string() {
       self.exec_shell(dir, &x)?;
     }
     Ok(())
   }
 
-  fn exec(&self, dir: impl AsRef<Path>, x: &Execution) -> anyhow::Result<()> {
+  fn exec(&self, dir: impl AsRef<Path>, x: &Execution, args: impl FuncArgs) -> anyhow::Result<()> {
     match x {
       Execution::Shell(x) => self.exec_shell(dir, x),
-      Execution::Fn(f) => self.exec_fn(dir, f),
+      Execution::Fn(f) => self.exec_fn(dir, f, args),
     }
   }
 
@@ -82,7 +82,7 @@ impl BuildScript {
 
     segment_info("Running `prepare`...");
     if let Some(prepare) = &self.source.prepare {
-      self.exec(source_dir, prepare)?;
+      self.exec(source_dir, prepare, ())?;
     }
     Ok(())
   }
@@ -90,12 +90,16 @@ impl BuildScript {
   pub fn build(&self) -> anyhow::Result<()> {
     segment_info("Running `build`...");
     if let Some(build) = &self.source.build {
-      self.exec(self.source_dir.path(), build)?;
+      self.exec(self.source_dir.path(), build, ())?;
     }
     Ok(())
   }
 
+  // TODO: use fakeroot
   pub fn pack(&self) -> anyhow::Result<()> {
-    todo!()
+    for package in &self.source.packages {
+      
+    }
+    Ok(())
   }
 }

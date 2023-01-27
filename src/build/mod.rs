@@ -18,5 +18,6 @@ pub fn run(path: PathBuf) -> anyhow::Result<()> {
   );
   script.prepare()?;
   // script.build()?;
+  script.pack()?;
   Ok(())
 }

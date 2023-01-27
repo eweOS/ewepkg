@@ -25,3 +25,7 @@ tokio-util = { version = "0.7.4", features = ["io"] }
 url = { version = "2.3.1", features = ["serde"] }
 xz2 = "0.1.7"
 zip = "0.6.3"
+
+[profile.release]
+strip = true
+opt-level = "z"

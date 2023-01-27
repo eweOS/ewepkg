@@ -13,7 +13,8 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::runtime::Runtime;
 use xz2::read::XzDecoder;
 
-const PB_STYLE: &str = "{prefix:<30!}  [{wide_bar:.blue}]  {bytes:>10}/{total_bytes:<10}  {msg:13}";
+const PB_STYLE: &str =
+  "{prefix:<30!}  {bytes:>10} {total_bytes:>10} [{wide_bar:.blue}] {percent:>3}%  {msg:12}";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ArchiveKind {
