@@ -1,5 +1,7 @@
 use crate::version::PkgVersion;
 use anyhow::bail;
+use openssl::error::ErrorStack;
+use openssl::hash::{Hasher, MessageDigest};
 use rhai::serde::from_dynamic;
 use rhai::EvalAltResult::{self, ErrorMismatchDataType};
 use rhai::{Dynamic, FnPtr, Map, Position};
@@ -168,9 +170,45 @@ impl Display for SourceLocation {
 pub enum ChecksumKind {
   #[serde(rename = "sha256sum")]
   Sha256,
+  #[serde(rename = "sha512sum")]
+  Sha512,
+}
 
-  #[serde(rename = "blake2sum")]
-  Blake2,
+impl ChecksumKind {
+  pub fn new_hasher(&self) -> Result<Hasher, ErrorStack> {
+    match self {
+      Self::Sha256 => Hasher::new(MessageDigest::sha256()),
+      Self::Sha512 => Hasher::new(MessageDigest::sha512()),
+    }
+  }
+
+  pub fn name(&self) -> &'static str {
+    match self {
+      Self::Sha256 => "SHA-256",
+      Self::Sha512 => "SHA-512",
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Hash(#[serde(with = "hex::serde")] Vec<u8>);
+
+impl AsRef<[u8]> for Hash {
+  fn as_ref(&self) -> &[u8] {
+    self
+  }
+}
+
+impl Deref for Hash {
+  type Target = [u8];
+
+  fn deref(&self) -> &Self::Target {
+    &self.0
+  }
+}
+
+fn get_true() -> bool {
+  true
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -182,10 +220,10 @@ struct SourceFileHelper {
   pub rename: Option<Box<str>>,
 
   #[serde(flatten)]
-  pub checksums: BTreeMap<ChecksumKind, Box<str>>,
+  pub checksums: BTreeMap<ChecksumKind, Hash>,
 
-  #[serde(default)]
-  pub skip_checksum: bool,
+  #[serde(default = "get_true")]
+  pub extract: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -197,10 +235,10 @@ pub struct SourceFile {
   pub rename: Option<Box<str>>,
 
   #[serde(flatten)]
-  pub checksums: BTreeMap<ChecksumKind, Box<str>>,
+  pub checksums: BTreeMap<ChecksumKind, Hash>,
 
-  #[serde(skip_serializing_if = "std::ops::Not::not")]
-  pub skip_checksum: bool,
+  #[serde(skip_serializing_if = "bool::clone")]
+  pub extract: bool,
 }
 
 impl SourceFile {
@@ -220,19 +258,16 @@ impl<'de> Deserialize<'de> for SourceFile {
       location,
       rename,
       checksums,
-      skip_checksum,
+      extract,
     } = SourceFileHelper::deserialize(de)?;
     if rename.is_none() && location.file_name().is_none() {
       return Err(D::Error::custom("no file name given"));
-    }
-    if !skip_checksum && checksums.is_empty() {
-      return Err(D::Error::custom("no checksum given or `skip_checksum`"));
     }
     Ok(Self {
       location,
       rename,
       checksums,
-      skip_checksum,
+      extract,
     })
   }
 }

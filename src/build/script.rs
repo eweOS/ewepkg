@@ -222,7 +222,15 @@ impl PackScript {
         pb.inc(1);
       }
 
-      archive.finish()?;
+      let metadata = serde_json::to_vec_pretty(&package.meta)?;
+      let mut header = tar::Header::new_old();
+      header.set_size(metadata.len() as _);
+      header.set_path("metadata.json")?;
+      header.set_mode(0o644);
+      header.set_cksum();
+      archive.append(&header, &*metadata)?;
+
+      archive.into_inner()?.finish()?;
       pb.finish_with_message("done");
     }
     Ok(())

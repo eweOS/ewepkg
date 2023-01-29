@@ -1,10 +1,12 @@
 use crate::source::{SourceFile, SourceLocation};
 use crate::util::{asyncify, tempfile_async, PB_STYLE_BYTES};
+use anyhow::bail;
 use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use futures::stream::FuturesUnordered;
 use futures::{TryFutureExt, TryStreamExt};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use openssl::error::ErrorStack;
 use reqwest::{Client, Url};
 use std::fs::{create_dir_all, remove_file, File, Permissions};
 use std::io::{self, Read, Seek};
@@ -12,7 +14,7 @@ use std::os::unix::prelude::PermissionsExt;
 use std::path::{Component, Path};
 use std::str::from_utf8;
 use tokio::fs::{copy, metadata, File as AsyncFile};
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 use tokio::runtime::Builder as RtBuilder;
 use xz2::read::XzDecoder;
 use zip::ZipArchive;
@@ -107,7 +109,7 @@ fn extract_ar(src: impl Read + Seek, dst: &Path) -> io::Result<()> {
     let name = from_utf8(entry.header().identifier())
       .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     if !is_safe_name(name) {
-      break;
+      continue;
     }
     let path = dst.join(name);
     let parent = path.parent().expect("path parent should exist now");
@@ -153,6 +155,7 @@ fn extract(
   pb: ProgressBar,
 ) -> io::Result<()> {
   use ArchiveKind::*;
+  pb.set_message("extracting");
   let src = FlowMeter::new(src, pb);
   match kind {
     Tar => tar::Archive::new(src).unpack(dst)?,
@@ -185,17 +188,53 @@ async fn download(
   Ok(())
 }
 
-// TODO: verify
+async fn verify(file: &SourceFile, f: &mut AsyncFile, pb: &ProgressBar) -> anyhow::Result<()> {
+  pb.set_message("verifying");
+  let mut checksums = file
+    .checksums
+    .iter()
+    .map(|(kind, sum)| Ok::<_, ErrorStack>((kind, kind.new_hasher()?, sum)))
+    .collect::<Result<Vec<_>, _>>()?;
+  let mut buf = [0; 8192];
+  loop {
+    let bytes = f.read(&mut buf).await?;
+    if bytes == 0 {
+      break;
+    }
+    pb.inc(bytes as _);
+    for (_, hasher, _) in checksums.iter_mut() {
+      hasher.update(&buf[..bytes])?;
+    }
+  }
+  for (kind, mut hasher, expected_sum) in checksums {
+    let sum = hasher.finish()?;
+    if *sum != **expected_sum {
+      bail!(
+        "{} checksum for '{}' does not correspond:\n\texpected: {}\n\tgot:      {}",
+        kind.name(),
+        file.location,
+        hex::encode(expected_sum),
+        hex::encode(sum)
+      );
+    }
+  }
+  Ok(())
+}
+
 async fn fetch_single_source_inner(
   source_dir: &Path,
   file: &SourceFile,
   client: Client,
   mp: MultiProgress,
 ) -> anyhow::Result<()> {
-  let ar_kind = file
-    .location
-    .file_name()
-    .and_then(ArchiveKind::from_file_name);
+  let ar_kind = if file.extract {
+    file
+      .location
+      .file_name()
+      .and_then(ArchiveKind::from_file_name)
+  } else {
+    None
+  };
 
   let pb = mp.add(ProgressBar::new(1));
   let style = ProgressStyle::with_template(PB_STYLE_BYTES)
@@ -213,6 +252,14 @@ async fn fetch_single_source_inner(
         let dst = source_dir.join(dir_name);
         let mut f = tempfile_async().await?;
         download(&client, url, &mut f, &pb).await?;
+        pb.reset();
+
+        if !file.checksums.is_empty() {
+          f.rewind().await?;
+          verify(file, &mut f, &pb).await?;
+          pb.reset();
+        }
+
         let mut f = match f.try_into_std() {
           Ok(f) => f,
           Err(f) => f
@@ -221,9 +268,6 @@ async fn fetch_single_source_inner(
             .try_into_std()
             .expect("file should be ready once cloned"),
         };
-
-        pb.reset();
-        pb.set_message("extracting");
         let pb2 = pb.clone();
         asyncify(move || {
           f.rewind()?;
@@ -234,19 +278,39 @@ async fn fetch_single_source_inner(
         let dst = source_dir.join(file.file_name());
         let mut f = AsyncFile::create(dst).await?;
         download(&client, url, &mut f, &pb).await?;
+
+        if !file.checksums.is_empty() {
+          pb.reset();
+          f.rewind().await?;
+          verify(file, &mut f, &pb).await?;
+        }
       }
     }
     SourceLocation::Local(path) => {
       pb.set_length(metadata(path).await?.len());
+
+      let mut f = AsyncFile::open(path).await?;
+      if !file.checksums.is_empty() {
+        verify(file, &mut f, &pb).await?;
+        pb.reset();
+      }
+
       if let Some((ar_kind, dir_name)) = ar_kind {
         let dir_name = file.rename.as_deref().unwrap_or(dir_name);
         let dst = source_dir.join(dir_name);
-        pb.set_message("extracting");
 
+        let f = match f.try_into_std() {
+          Ok(f) => f,
+          Err(f) => f
+            .try_clone()
+            .await?
+            .try_into_std()
+            .expect("file should be ready once cloned"),
+        };
         let pb2 = pb.clone();
-        let path2 = path.clone();
-        asyncify(move || extract(ar_kind, File::open(path2)?, dst, pb2)).await?;
+        asyncify(move || extract(ar_kind, f, dst, pb2)).await?;
       } else {
+        drop(f);
         let dst = source_dir.join(file.file_name());
         pb.set_message("copying");
         copy(path, dst).await?;
