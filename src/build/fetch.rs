@@ -1,5 +1,5 @@
 use crate::source::{SourceFile, SourceLocation};
-use crate::util::{asyncify, tempfile_async};
+use crate::util::{asyncify, tempfile_async, PB_STYLE_BYTES};
 use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use futures::stream::FuturesUnordered;
@@ -17,9 +17,6 @@ use tokio::runtime::Builder as RtBuilder;
 use xz2::read::XzDecoder;
 use zip::ZipArchive;
 use zstd::stream::read::Decoder as ZstDecoder;
-
-const PB_STYLE: &str =
-  "{prefix:<30!}  {bytes:>10} {total_bytes:>10} [{wide_bar:.blue}] {percent:>3}%  {msg:12}";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ArchiveKind {
@@ -201,7 +198,7 @@ async fn fetch_single_source_inner(
     .and_then(ArchiveKind::from_file_name);
 
   let pb = mp.add(ProgressBar::new(1));
-  let style = ProgressStyle::with_template(PB_STYLE)
+  let style = ProgressStyle::with_template(PB_STYLE_BYTES)
     .unwrap()
     .progress_chars("=> ");
   pb.set_style(style);

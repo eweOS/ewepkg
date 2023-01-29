@@ -1,7 +1,9 @@
 use crate::build::fetch::fetch_source;
 use crate::segment_info;
 use crate::source::{Execution, Package, Source};
+use crate::util::PB_STYLE;
 use anyhow::bail;
+use indicatif::{ProgressBar, ProgressStyle};
 use rhai::{Dynamic, Engine, FnPtr, FuncArgs, Scope, AST};
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -184,14 +186,42 @@ impl PackScript {
       if let Some(f) = &package.pack {
         self.exec_fn(&self.source_dir, f, [path])?;
       }
-      let archive = File::create(format!(
-        "{}_{}.tar.xz",
-        package.meta.name, package.meta.version
-      ))?;
-      let mut archive = tar::Builder::new(XzEncoder::new(archive, 4));
+
+      segment_info!("Creating tarball...");
+      let archive_name = format!("{}_{}.tar.xz", package.meta.name, package.meta.version);
+      let mut archive = tar::Builder::new(XzEncoder::new(File::create(&archive_name)?, 1));
       archive.follow_symlinks(false);
-      archive.append_dir_all("root", package_dir.path())?;
+
+      let base = package_dir.path();
+      let mut paths = vec![];
+      let mut stack = vec![(base.to_path_buf(), true)];
+      while let Some((path, is_dir)) = stack.pop() {
+        if is_dir {
+          for entry in path.read_dir()? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            stack.push((entry.path(), file_type.is_dir()))
+          }
+        }
+        if path != base {
+          paths.push(path);
+        }
+      }
+
+      let pb = ProgressBar::new(paths.len() as _);
+      pb.set_prefix(archive_name);
+      let style = ProgressStyle::with_template(PB_STYLE)
+        .unwrap()
+        .progress_chars("=> ");
+      pb.set_style(style);
+
+      for path in paths {
+        archive.append_path_with_name(&path, path.strip_prefix(base)?)?;
+        pb.inc(1);
+      }
+
       archive.finish()?;
+      pb.finish_with_message("done");
     }
     Ok(())
   }

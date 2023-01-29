@@ -3,6 +3,12 @@ use tokio::fs::File;
 use tokio::io;
 use tokio::task::spawn_blocking;
 
+pub const PB_STYLE: &str =
+  "{prefix:<30!}  {pos:>10} {len:>10} [{wide_bar:.blue}] {percent:>3}%  {msg:12}";
+
+pub const PB_STYLE_BYTES: &str =
+  "{prefix:<30!}  {bytes:>10} {total_bytes:>10} [{wide_bar:.blue}] {percent:>3}%  {msg:12}";
+
 // Taken from Tokio
 pub async fn asyncify<F, T>(f: F) -> io::Result<T>
 where
