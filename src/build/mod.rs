@@ -5,7 +5,6 @@ use crate::segment_info;
 use anyhow::bail;
 use script::{BuildScript, PackScript};
 use std::path::PathBuf;
-use std::time::Duration;
 
 pub fn run(path: PathBuf) -> anyhow::Result<()> {
   let script = BuildScript::new(path)?;
@@ -14,7 +13,6 @@ pub fn run(path: PathBuf) -> anyhow::Result<()> {
   script.prepare()?;
   script.build()?;
   script.pack()?;
-  std::thread::sleep(Duration::from_secs(60));
   Ok(())
 }
 
