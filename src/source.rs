@@ -1,6 +1,7 @@
 use crate::version::PkgVersion;
+use anyhow::bail;
 use rhai::serde::from_dynamic;
-use rhai::EvalAltResult::{self, ErrorMismatchDataType, ErrorRuntime};
+use rhai::EvalAltResult::{self, ErrorMismatchDataType};
 use rhai::{Dynamic, FnPtr, Map, Position};
 use serde::de::Error;
 use serde::{de, Deserialize, Deserializer, Serialize};
@@ -67,6 +68,45 @@ impl<'de> Deserialize<'de> for PkgName {
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 #[error("package name contains invalid character `{0}`")]
 pub struct ParseNameError(char);
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ArchList(BTreeSet<Box<str>>);
+
+impl ArchList {
+  pub fn contains(&self, arch: &str) -> bool {
+    (self.0)
+      .iter()
+      .any(|x| &**x == "any" || &**x == "all" || &**x == arch)
+  }
+
+  pub fn contains_all(&self) -> bool {
+    self.0.contains("all")
+  }
+
+  pub fn is_valid_for_package(&self) -> bool {
+    if self.contains_all() {
+      self.0.len() == 1
+    } else {
+      true
+    }
+  }
+}
+
+impl<'de> Deserialize<'de> for ArchList {
+  fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+    let mut set = BTreeSet::<Box<str>>::deserialize(de)?;
+    if set.is_empty() {
+      return Err(serde::de::Error::invalid_length(
+        0,
+        &"one or more architecture",
+      ));
+    }
+    if set.contains("any") {
+      set.retain(|x| &**x == "any" || &**x == "all");
+    }
+    Ok(Self(set))
+  }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptionalDepends {
@@ -245,6 +285,7 @@ pub struct PackageMeta {
   pub name: PkgName,
   pub description: Box<str>,
   pub version: PkgVersion,
+  pub architecture: ArchList,
 
   #[serde(default)]
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -264,6 +305,7 @@ struct PackageDelta {
   name: Option<PkgName>,
   description: Option<Box<str>>,
   version: Option<PkgVersion>,
+  architecture: Option<ArchList>,
   homepage: Option<Url>,
 
   #[serde(default)]
@@ -295,12 +337,23 @@ impl Package {
     let pack = map.remove("pack").map(fnptr_from_dynamic).transpose()?;
     drop(map);
     let mut delta: PackageDelta = from_dynamic(value)?;
+
+    let architecture = {
+      if let Some(mut arch) = delta.architecture {
+        arch.0.extend(source_meta.architecture.0.iter().cloned());
+        arch
+      } else {
+        source_meta.architecture.clone()
+      }
+    };
+
     let meta = PackageMeta {
       name: delta.name.unwrap_or_else(|| source_meta.name.clone()),
       description: delta
         .description
         .unwrap_or_else(|| source_meta.description.clone()),
       version: delta.version.unwrap_or_else(|| source_meta.version.clone()),
+      architecture,
       homepage: delta.homepage.or_else(|| source_meta.homepage.clone()),
       depends: {
         delta.depends.extend(source_meta.depends.iter().cloned());
@@ -336,12 +389,13 @@ impl Ord for Package {
     self.meta.name.cmp(&other.meta.name)
   }
 }
-// TODO: architecture, license
+// TODO: license
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceMeta {
   pub name: PkgName,
   pub description: Box<str>,
   pub version: PkgVersion,
+  pub architecture: ArchList,
 
   #[serde(default)]
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -360,7 +414,6 @@ pub struct SourceMeta {
   #[serde(skip_serializing_if = "BTreeSet::is_empty")]
   pub optional_depends: BTreeSet<OptionalDepends>,
 
-  // TODO: use set
   #[serde(default)]
   #[serde(skip_serializing_if = "Vec::is_empty")]
   pub source: Vec<SourceFile>,
@@ -376,11 +429,11 @@ pub struct Source {
 }
 
 impl Source {
-  pub fn from_dynamic(value: &mut Dynamic) -> Result<Self, Box<EvalAltResult>> {
+  pub fn from_dynamic(value: &mut Dynamic) -> anyhow::Result<Self> {
     let type_name = value.type_name();
     let mut map = value.write_lock::<Map>().ok_or_else(|| {
       Box::new(ErrorMismatchDataType(
-        "map".into(),
+        "Map".into(),
         type_name.into(),
         Position::NONE,
       ))
@@ -405,10 +458,7 @@ impl Source {
       })
       .transpose()?;
     if pack.is_some() && packages_repr.is_some() {
-      return Err(Box::new(ErrorRuntime(
-        Dynamic::from("field `pack` and `packages` conflicts"),
-        Position::NONE,
-      )));
+      bail!("field `pack` and `packages` conflicts");
     }
 
     drop(map);
@@ -419,11 +469,15 @@ impl Source {
         packages.insert(Package::from_dynamic_and_source_meta(&mut package, &meta)?);
       }
     } else {
+      if !meta.architecture.is_valid_for_package() {
+        bail!("architecture for package conflicts between `all` and other platforms");
+      }
       packages.insert(Package {
         meta: PackageMeta {
           name: meta.name.clone(),
           description: meta.description.clone(),
           version: meta.version.clone(),
+          architecture: meta.architecture.clone(),
           homepage: meta.homepage.clone(),
           depends: meta.depends.clone(),
           optional_depends: meta.optional_depends.clone(),
