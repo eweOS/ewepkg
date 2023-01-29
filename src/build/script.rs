@@ -1,16 +1,18 @@
+use super::engine::create_engine;
 use crate::build::fetch::fetch_source;
 use crate::segment_info;
 use crate::source::{Execution, Package, Source};
 use crate::util::PB_STYLE;
 use anyhow::bail;
 use indicatif::{ProgressBar, ProgressStyle};
-use rhai::{Dynamic, Engine, FnPtr, FuncArgs, Scope, AST};
+use rhai::{Dynamic, Engine, FnPtr, FuncArgs, AST};
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::from_utf8;
 use tempfile::{tempdir, TempDir};
-use xz2::write::XzEncoder;
+use zstd::stream::Encoder as ZstEncoder;
 
 #[derive(Debug)]
 pub struct BuildScript {
@@ -19,30 +21,30 @@ pub struct BuildScript {
   path: Box<Path>,
   source: Source,
   source_dir: TempDir,
+  arch: Box<str>,
 }
 
 impl BuildScript {
-  pub fn new(path: impl Into<PathBuf>) -> anyhow::Result<Self> {
-    let path = path.into();
-    let engine = Engine::new();
-    let mut scope = Scope::new();
+  pub fn new(path: PathBuf) -> anyhow::Result<Self> {
     let source_dir = tempdir()?;
-    let source_dir_path = source_dir
-      .path()
-      .to_str()
-      .expect("tempdir path is not UTF-8")
-      .to_string();
-    scope.push("source_dir", source_dir_path);
+    let arch = Command::new("uname").arg("-m").output()?.stdout;
+    let arch = from_utf8(&arch)?.trim();
+    let (engine, mut scope) = create_engine(source_dir.path(), arch.to_string());
 
     let ast = engine.compile_file_with_scope(&scope, path.clone())?;
     let mut value = engine.eval_ast_with_scope(&mut scope, &ast)?;
     let source = Source::from_dynamic(&mut value)?;
+    if !source.meta.architecture.contains(arch) {
+      bail!("source architecture does not contain `{arch}`")
+    }
+
     Ok(Self {
       engine,
       ast,
       path: path.into(),
       source,
       source_dir,
+      arch: arch.into(),
     })
   }
 
@@ -86,16 +88,16 @@ impl BuildScript {
     segment_info!("Fetching source...");
     fetch_source(source_dir, &self.source.meta.source)?;
 
-    segment_info!("Preparing source...");
     if let Some(prepare) = &self.source.prepare {
+      segment_info!("Preparing source...");
       self.exec(source_dir, prepare, ())?;
     }
     Ok(())
   }
 
   pub fn build(&self) -> anyhow::Result<()> {
-    segment_info!("Building package...");
     if let Some(build) = &self.source.build {
+      segment_info!("Building package...");
       self.exec(self.source_dir.path(), build, ())?;
     }
     Ok(())
@@ -110,6 +112,7 @@ impl BuildScript {
         Path::new("__internal_package_inside_fakeroot"),
         &self.path,
         self.source_dir.path(),
+        Path::new(&*self.arch),
       ])
       .status()?;
     if !status.success() {
@@ -126,20 +129,13 @@ pub struct PackScript {
   ast: AST,
   packages: BTreeSet<Package>,
   source_dir: Box<Path>,
+  arch: Box<str>,
 }
 
 impl PackScript {
-  pub fn new(path: impl Into<PathBuf>, source_dir: impl Into<PathBuf>) -> anyhow::Result<Self> {
-    let engine = Engine::new();
-    let mut scope = Scope::new();
-    let source_dir = source_dir.into();
-    let source_dir_str = source_dir
-      .to_str()
-      .expect("tempdir path is not UTF-8")
-      .to_string();
-    scope.push("source_dir", source_dir_str);
-
-    let ast = engine.compile_file_with_scope(&scope, path.into())?;
+  pub fn new(path: PathBuf, source_dir: &Path, arch: String) -> anyhow::Result<Self> {
+    let (engine, mut scope) = create_engine(source_dir, arch.clone());
+    let ast = engine.compile_file_with_scope(&scope, path)?;
     let mut value = engine.eval_ast_with_scope(&mut scope, &ast)?;
     let source = Source::from_dynamic(&mut value)?;
     Ok(Self {
@@ -147,6 +143,7 @@ impl PackScript {
       ast,
       packages: source.packages,
       source_dir: source_dir.into(),
+      arch: arch.into(),
     })
   }
 
@@ -188,8 +185,11 @@ impl PackScript {
       }
 
       segment_info!("Creating tarball...");
-      let archive_name = format!("{}_{}.tar.xz", package.meta.name, package.meta.version);
-      let mut archive = tar::Builder::new(XzEncoder::new(File::create(&archive_name)?, 1));
+      let archive_name = format!(
+        "{}_{}_{}.tar.zst",
+        package.meta.name, package.meta.version, self.arch,
+      );
+      let mut archive = tar::Builder::new(ZstEncoder::new(File::create(&archive_name)?, 3)?);
       archive.follow_symlinks(false);
 
       let base = package_dir.path();
@@ -210,13 +210,15 @@ impl PackScript {
 
       let pb = ProgressBar::new(paths.len() as _);
       pb.set_prefix(archive_name);
+      pb.set_message("packing");
       let style = ProgressStyle::with_template(PB_STYLE)
         .unwrap()
         .progress_chars("=> ");
       pb.set_style(style);
 
       for path in paths {
-        archive.append_path_with_name(&path, path.strip_prefix(base)?)?;
+        let name = Path::new("root").join(path.strip_prefix(base)?);
+        archive.append_path_with_name(&path, name)?;
         pb.inc(1);
       }
 

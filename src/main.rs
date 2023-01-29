@@ -22,14 +22,22 @@ enum Command {
     path: PathBuf,
   },
   #[command(name = "__internal_package_inside_fakeroot", hide = true)]
-  InternalPackage { path: PathBuf, source_dir: PathBuf },
+  InternalPackage {
+    path: PathBuf,
+    source_dir: PathBuf,
+    arch: String,
+  },
 }
 
 fn run() -> anyhow::Result<()> {
   let args = Args::parse();
   match args.cmd {
     Command::Build { path } => build::run(path)?,
-    Command::InternalPackage { path, source_dir } => build::run_package(path, source_dir)?,
+    Command::InternalPackage {
+      path,
+      source_dir,
+      arch,
+    } => build::run_package(path, source_dir, arch)?,
   }
   Ok(())
 }
