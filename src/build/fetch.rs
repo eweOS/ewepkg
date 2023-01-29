@@ -1,17 +1,22 @@
 use crate::source::{SourceFile, SourceLocation};
 use crate::util::{asyncify, tempfile_async};
+use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use futures::stream::FuturesUnordered;
 use futures::{TryFutureExt, TryStreamExt};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reqwest::{Client, Url};
-use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::fs::{create_dir_all, remove_file, File, Permissions};
+use std::io::{self, Read, Seek};
+use std::os::unix::prelude::PermissionsExt;
+use std::path::{Component, Path};
+use std::str::from_utf8;
 use tokio::fs::{copy, metadata, File as AsyncFile};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::runtime::Builder as RtBuilder;
 use xz2::read::XzDecoder;
+use zip::ZipArchive;
+use zstd::stream::read::Decoder as ZstDecoder;
 
 const PB_STYLE: &str =
   "{prefix:<30!}  {bytes:>10} {total_bytes:>10} [{wide_bar:.blue}] {percent:>3}%  {msg:12}";
@@ -21,26 +26,33 @@ enum ArchiveKind {
   Tar,
   TarGz,
   TarXz,
+  TarBz2,
+  TarZst,
   Zip,
+  Deb,
+  // reserved for future use
+  #[allow(unused)]
   Ar,
 }
 
 impl ArchiveKind {
   fn from_file_name(name: &str) -> Option<(Self, &str)> {
-    let len = name.len();
-    if name.ends_with(".tar") {
-      Some((Self::Tar, &name[..len - 4]))
-    } else if name.ends_with(".tar.gz") {
-      Some((Self::TarGz, &name[..len - 7]))
-    } else if name.ends_with(".tar.xz") {
-      Some((Self::TarXz, &name[..len - 7]))
-    } else if name.ends_with(".zip") {
-      Some((Self::Zip, &name[..len - 4]))
-    } else if name.ends_with(".deb") {
-      Some((Self::Ar, &name[..len - 4]))
-    } else {
-      None
-    }
+    let mut segments = name.rsplit('.').peekable();
+    let (kind, ext_len) = match (segments.next()?, segments.peek()) {
+      ("tar", _) => (Self::Tar, 4),
+      ("tgz", _) => (Self::TarGz, 4),
+      ("txz", _) => (Self::TarXz, 4),
+      ("tbz2", _) => (Self::TarBz2, 5),
+      ("tzst", _) => (Self::TarZst, 5),
+      ("zip", _) => (Self::Zip, 4),
+      ("deb", _) => (Self::Deb, 4),
+      ("gz", Some(&"tar")) => (Self::TarGz, 7),
+      ("xz", Some(&"tar")) => (Self::TarXz, 7),
+      ("bz2", Some(&"tar")) => (Self::TarBz2, 8),
+      ("zst", Some(&"tar")) => (Self::TarZst, 8),
+      _ => return None,
+    };
+    Some((kind, &name[..name.len() - ext_len]))
   }
 }
 
@@ -63,9 +75,83 @@ impl<R: Read> Read for FlowMeter<R> {
   }
 }
 
+impl<R: Read + Seek> Seek for FlowMeter<R> {
+  fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+    self.inner.seek(pos)
+  }
+}
+
+// Taken from ZipArchive::enclosed_name
+fn is_safe_name(name: &str) -> bool {
+  if name.contains('\0') {
+    return false;
+  }
+  let path = Path::new(name);
+  let mut depth = 0usize;
+  for component in path.components() {
+    match component {
+      Component::Prefix(_) | Component::RootDir => return false,
+      Component::ParentDir => {
+        if depth == 0 {
+          return false;
+        }
+        depth -= 1;
+      }
+      Component::Normal(_) => depth += 1,
+      Component::CurDir => {}
+    }
+  }
+  true
+}
+
+fn extract_ar(src: impl Read + Seek, dst: &Path) -> io::Result<()> {
+  let mut ar = ar::Archive::new(src);
+  while let Some(mut entry) = ar.next_entry().transpose()? {
+    let name = from_utf8(entry.header().identifier())
+      .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    if !is_safe_name(name) {
+      break;
+    }
+    let path = dst.join(name);
+    let parent = path.parent().expect("path parent should exist now");
+    if !parent.exists() {
+      create_dir_all(parent)?;
+    }
+    let mut f = File::create(path)?;
+    io::copy(&mut entry, &mut f)?;
+    let perm = Permissions::from_mode(entry.header().mode());
+    f.set_permissions(perm)?;
+  }
+  Ok(())
+}
+
+fn extract_deb(mut src: FlowMeter<impl Read + Seek>, dst: &Path) -> io::Result<()> {
+  extract_ar(&mut src, dst)?;
+  let mut pb = src.pb;
+  let orig_len = pb.length();
+
+  for x in ["control", "data"] {
+    pb.reset();
+    pb.set_message(format!("extracting {x}.tar.xz"));
+    let control_path = dst.join(format!("{x}.tar.xz"));
+    let f = File::open(&control_path)?;
+    pb.set_length(f.metadata()?.len());
+    let f = FlowMeter::new(f, pb);
+    let mut ar = tar::Archive::new(XzDecoder::new(f));
+    ar.unpack(dst.join(x))?;
+    remove_file(control_path)?;
+    pb = ar.into_inner().into_inner().pb;
+  }
+
+  if let Some(len) = orig_len {
+    pb.set_length(len);
+  }
+  Ok(())
+}
+
 fn extract(
   kind: ArchiveKind,
-  src: impl Read,
+  src: impl Read + Seek,
   dst: impl AsRef<Path>,
   pb: ProgressBar,
 ) -> io::Result<()> {
@@ -75,8 +161,11 @@ fn extract(
     Tar => tar::Archive::new(src).unpack(dst)?,
     TarGz => tar::Archive::new(GzDecoder::new(src)).unpack(dst)?,
     TarXz => tar::Archive::new(XzDecoder::new(src)).unpack(dst)?,
-    Zip => todo!(),
-    Ar => todo!(),
+    TarBz2 => tar::Archive::new(BzDecoder::new(src)).unpack(dst)?,
+    TarZst => tar::Archive::new(ZstDecoder::new(src)?).unpack(dst)?,
+    Zip => ZipArchive::new(src)?.extract(dst)?,
+    Ar => extract_ar(src, dst.as_ref())?,
+    Deb => extract_deb(src, dst.as_ref())?,
   }
   Ok(())
 }
@@ -127,15 +216,20 @@ async fn fetch_single_source_inner(
         let dst = source_dir.join(dir_name);
         let mut f = tempfile_async().await?;
         download(&client, url, &mut f, &pb).await?;
-        let mut f = f
-          .try_into_std()
-          .expect("all async file operations should be done");
+        let mut f = match f.try_into_std() {
+          Ok(f) => f,
+          Err(f) => f
+            .try_clone()
+            .await?
+            .try_into_std()
+            .expect("file should be ready once cloned"),
+        };
 
-        pb.set_position(0);
+        pb.reset();
         pb.set_message("extracting");
         let pb2 = pb.clone();
         asyncify(move || {
-          f.seek(SeekFrom::Start(0))?;
+          f.rewind()?;
           extract(ar_kind, f, dst, pb2)
         })
         .await?;
@@ -211,6 +305,9 @@ async fn fetch_source_inner(source_dir: &Path, files: &[SourceFile]) -> anyhow::
 }
 
 pub fn fetch_source(source_dir: &Path, files: &[SourceFile]) -> anyhow::Result<()> {
-  let rt = RtBuilder::new_current_thread().build()?;
+  let rt = RtBuilder::new_current_thread()
+    .enable_io()
+    .enable_time()
+    .build()?;
   rt.block_on(fetch_source_inner(source_dir, files))
 }

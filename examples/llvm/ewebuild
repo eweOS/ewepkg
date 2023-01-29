@@ -104,9 +104,6 @@ let source_base = `https://github.com/llvm/llvm-project/releases/download/llvmor
       "gcc-libs", "zlib", "zstd", "libffi", "libedit", "ncurses",
       "libxml2"
     ],
-    pack: [
-      [""]
-    ],
     pack: |package_dir| `
       install -d "${package_dir}/usr/lib"
       cp -P \

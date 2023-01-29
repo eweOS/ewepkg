@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tempfile::{tempdir, TempDir};
+use tempfile::{tempdir, tempdir_in, TempDir};
 use xz2::write::XzEncoder;
 
 #[derive(Debug)]
@@ -24,7 +24,8 @@ impl BuildScript {
     let path = path.into();
     let engine = Engine::new();
     let mut scope = Scope::new();
-    let source_dir = tempdir()?;
+    // let source_dir = tempdir()?;
+    let source_dir = tempdir_in(".")?;
     let source_dir_path = source_dir
       .path()
       .to_str()

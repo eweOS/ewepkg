@@ -9,12 +9,15 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.68"
+ar = "0.9.0"
+bzip2 = "0.4.4"
 clap = { version = "4.1.1", features = ["derive"] }
 console = "0.15.5"
 flate2 = "1.0.25"
 futures = "0.3.25"
 indicatif = "0.17.3"
 libc = "0.2.139"
+openssl = "0.10.45"
 reqwest = { version = "0.11.14", features = ["stream"] }
 rhai = { version = "1.12.0", features = ["serde", "sync"] }
 serde = { version = "1.0.152", features = ["derive"] }
@@ -26,6 +29,7 @@ tokio-util = { version = "0.7.4", features = ["io"] }
 url = { version = "2.3.1", features = ["serde"] }
 xz2 = "0.1.7"
 zip = "0.6.3"
+zstd = "0.12.2"
 
 [profile.release]
 strip = true

@@ -118,7 +118,7 @@ impl SourceLocation {
 impl Display for SourceLocation {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     match self {
-      SourceLocation::Http(url) => write!(f, "{}", url),
+      SourceLocation::Http(url) => write!(f, "{url}"),
       SourceLocation::Local(path) => write!(f, "{}", path.display()),
     }
   }
