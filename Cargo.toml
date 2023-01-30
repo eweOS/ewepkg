@@ -13,7 +13,7 @@ ar = "0.9.0"
 bzip2 = "0.4.4"
 clap = { version = "4.1.1", features = ["derive"] }
 console = "0.15.5"
-flate2 = "1.0.25"
+flate2 = { version = "1.0.25", features = ["zlib"], default-features = false }
 futures = "0.3.25"
 hex = { version = "0.4.3", features = ["serde"] }
 indicatif = "0.17.3"
@@ -32,7 +32,7 @@ tokio-util = { version = "0.7.4", features = ["io"] }
 url = { version = "2.3.1", features = ["serde"] }
 xz2 = "0.1.7"
 zip = "0.6.3"
-zstd = "0.12.2"
+zstd = "0.11.2"
 
 [profile.release]
 strip = true
