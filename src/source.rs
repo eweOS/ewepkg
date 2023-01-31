@@ -1,4 +1,4 @@
-use crate::version::PkgVersion;
+use crate::version::PackageVersion;
 use anyhow::bail;
 use openssl::error::ErrorStack;
 use openssl::hash::{Hasher, MessageDigest};
@@ -7,6 +7,7 @@ use rhai::EvalAltResult::{self, ErrorMismatchDataType};
 use rhai::{Dynamic, FnPtr, Map, Position};
 use serde::de::Error;
 use serde::{de, Deserialize, Deserializer, Serialize};
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::ops::Deref;
@@ -16,7 +17,7 @@ use thiserror::Error;
 use url::Url;
 
 // TODO: more strict
-fn assure_pkg_name<S: AsRef<str>>(s: S) -> Result<S, ParseNameError> {
+pub fn assure_pkg_name<S: AsRef<str>>(s: S) -> Result<S, ParseNameError> {
   match s
     .as_ref()
     .chars()
@@ -28,9 +29,9 @@ fn assure_pkg_name<S: AsRef<str>>(s: S) -> Result<S, ParseNameError> {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-pub struct PkgName(Box<str>);
+pub struct PackageName(Box<str>);
 
-impl FromStr for PkgName {
+impl FromStr for PackageName {
   type Err = ParseNameError;
 
   fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -39,7 +40,7 @@ impl FromStr for PkgName {
   }
 }
 
-impl Deref for PkgName {
+impl Deref for PackageName {
   type Target = str;
 
   fn deref(&self) -> &Self::Target {
@@ -47,19 +48,31 @@ impl Deref for PkgName {
   }
 }
 
-impl Debug for PkgName {
+impl AsRef<str> for PackageName {
+  fn as_ref(&self) -> &str {
+    self
+  }
+}
+
+impl Borrow<str> for PackageName {
+  fn borrow(&self) -> &str {
+    self
+  }
+}
+
+impl Debug for PackageName {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     <str as Debug>::fmt(self, f)
   }
 }
 
-impl Display for PkgName {
+impl Display for PackageName {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     f.write_str(self)
   }
 }
 
-impl<'de> Deserialize<'de> for PkgName {
+impl<'de> Deserialize<'de> for PackageName {
   fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
     assure_pkg_name(String::deserialize(de)?)
       .map(|x| Self(x.into()))
@@ -112,7 +125,7 @@ impl<'de> Deserialize<'de> for ArchList {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptionalDepends {
-  pub name: PkgName,
+  pub name: PackageName,
 
   #[serde(default)]
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -317,9 +330,9 @@ fn fnptr_from_dynamic(x: Dynamic) -> Result<FnPtr, Box<EvalAltResult>> {
 // TODO: architecture
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageMeta {
-  pub name: PkgName,
+  pub name: PackageName,
   pub description: Box<str>,
-  pub version: PkgVersion,
+  pub version: PackageVersion,
   pub architecture: ArchList,
 
   #[serde(default)]
@@ -328,23 +341,57 @@ pub struct PackageMeta {
 
   #[serde(default)]
   #[serde(skip_serializing_if = "BTreeSet::is_empty")]
-  pub depends: BTreeSet<PkgName>,
+  pub provides: BTreeSet<PackageName>,
+
+  #[serde(default)]
+  #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+  pub conflicts: BTreeSet<PackageName>,
+
+  #[serde(default)]
+  #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+  pub depends: BTreeSet<PackageName>,
 
   #[serde(default)]
   #[serde(skip_serializing_if = "BTreeSet::is_empty")]
   pub optional_depends: BTreeSet<OptionalDepends>,
 }
 
+impl PartialEq for PackageMeta {
+  fn eq(&self, other: &Self) -> bool {
+    self.name == other.name
+  }
+}
+
+impl Eq for PackageMeta {}
+
+impl PartialOrd for PackageMeta {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+impl Ord for PackageMeta {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    self.name.cmp(&other.name)
+  }
+}
+
 #[derive(Debug, Deserialize)]
 struct PackageDelta {
-  name: Option<PkgName>,
+  name: Option<PackageName>,
   description: Option<Box<str>>,
-  version: Option<PkgVersion>,
+  version: Option<PackageVersion>,
   architecture: Option<ArchList>,
   homepage: Option<Url>,
 
   #[serde(default)]
-  depends: BTreeSet<PkgName>,
+  pub provides: BTreeSet<PackageName>,
+
+  #[serde(default)]
+  pub conflicts: BTreeSet<PackageName>,
+
+  #[serde(default)]
+  depends: BTreeSet<PackageName>,
 
   #[serde(default)]
   optional_depends: BTreeSet<OptionalDepends>,
@@ -390,6 +437,16 @@ impl Package {
       version: delta.version.unwrap_or_else(|| source_meta.version.clone()),
       architecture,
       homepage: delta.homepage.or_else(|| source_meta.homepage.clone()),
+      provides: {
+        delta.provides.extend(source_meta.provides.iter().cloned());
+        delta.provides
+      },
+      conflicts: {
+        delta
+          .conflicts
+          .extend(source_meta.conflicts.iter().cloned());
+        delta.conflicts
+      },
       depends: {
         delta.depends.extend(source_meta.depends.iter().cloned());
         delta.depends
@@ -427,23 +484,31 @@ impl Ord for Package {
 // TODO: license
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceMeta {
-  pub name: PkgName,
+  pub name: PackageName,
   pub description: Box<str>,
-  pub version: PkgVersion,
+  pub version: PackageVersion,
   pub architecture: ArchList,
 
   #[serde(default)]
   #[serde(skip_serializing_if = "Option::is_none")]
   pub homepage: Option<Url>,
 
-  // TODO: add version requirement
   #[serde(default)]
   #[serde(skip_serializing_if = "BTreeSet::is_empty")]
-  pub build_depends: BTreeSet<PkgName>,
+  pub provides: BTreeSet<PackageName>,
 
   #[serde(default)]
   #[serde(skip_serializing_if = "BTreeSet::is_empty")]
-  pub depends: BTreeSet<PkgName>,
+  pub conflicts: BTreeSet<PackageName>,
+
+  // TODO: add version requirement
+  #[serde(default)]
+  #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+  pub build_depends: BTreeSet<PackageName>,
+
+  #[serde(default)]
+  #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+  pub depends: BTreeSet<PackageName>,
 
   #[serde(default)]
   #[serde(skip_serializing_if = "BTreeSet::is_empty")]
@@ -514,6 +579,8 @@ impl Source {
           version: meta.version.clone(),
           architecture: meta.architecture.clone(),
           homepage: meta.homepage.clone(),
+          provides: meta.provides.clone(),
+          conflicts: meta.conflicts.clone(),
           depends: meta.depends.clone(),
           optional_depends: meta.optional_depends.clone(),
         },

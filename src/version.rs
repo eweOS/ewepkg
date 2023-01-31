@@ -91,13 +91,13 @@ pub enum ParseVersionError {
 }
 
 #[derive(Debug, Clone)]
-pub struct PkgVersion {
+pub struct PackageVersion {
   epoch: u32,
   upstream: Box<str>,
   revision: Option<Box<str>>,
 }
 
-impl FromStr for PkgVersion {
+impl FromStr for PackageVersion {
   type Err = ParseVersionError;
 
   fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -128,13 +128,13 @@ impl FromStr for PkgVersion {
   }
 }
 
-impl PartialOrd for PkgVersion {
+impl PartialOrd for PackageVersion {
   fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
     Some(self.cmp(other))
   }
 }
 
-impl Ord for PkgVersion {
+impl Ord for PackageVersion {
   fn cmp(&self, other: &Self) -> Ordering {
     match self.epoch.cmp(&other.epoch) {
       Equal => {}
@@ -151,15 +151,15 @@ impl Ord for PkgVersion {
   }
 }
 
-impl PartialEq for PkgVersion {
+impl PartialEq for PackageVersion {
   fn eq(&self, other: &Self) -> bool {
     self.cmp(other) == Equal
   }
 }
 
-impl Eq for PkgVersion {}
+impl Eq for PackageVersion {}
 
-impl Display for PkgVersion {
+impl Display for PackageVersion {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     let u = &self.upstream;
     match (self.epoch, &self.revision) {
@@ -171,7 +171,7 @@ impl Display for PkgVersion {
   }
 }
 
-impl Serialize for PkgVersion {
+impl Serialize for PackageVersion {
   fn serialize<S: Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
     let u = &self.upstream;
     match (self.epoch, &self.revision) {
@@ -181,11 +181,9 @@ impl Serialize for PkgVersion {
   }
 }
 
-impl<'de> Deserialize<'de> for PkgVersion {
+impl<'de> Deserialize<'de> for PackageVersion {
   fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-    <&'de str>::deserialize(de)?
-      .parse()
-      .map_err(de::Error::custom)
+    String::deserialize(de)?.parse().map_err(de::Error::custom)
   }
 }
 
@@ -193,11 +191,11 @@ impl<'de> Deserialize<'de> for PkgVersion {
 mod tests {
   use super::*;
 
-  fn parse_ver(s: &str) -> Result<PkgVersion, ParseVersionError> {
+  fn parse_ver(s: &str) -> Result<PackageVersion, ParseVersionError> {
     s.parse()
   }
 
-  fn ver(s: &str) -> PkgVersion {
+  fn ver(s: &str) -> PackageVersion {
     s.parse().unwrap()
   }
 
@@ -205,7 +203,7 @@ mod tests {
   fn test_parse_version() {
     assert_eq!(
       parse_ver("1:2.33+beta1-4"),
-      Ok(PkgVersion {
+      Ok(PackageVersion {
         epoch: 1,
         upstream: "2.33+beta1".into(),
         revision: Some("4".into())
