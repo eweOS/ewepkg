@@ -1,5 +1,6 @@
 #{
   name: "minimum",
   description: "Minimum representation of a build script",
-  version: "1",
+  version: "1.1.4+beta5-14",
+  architecture: ["all"],
 }

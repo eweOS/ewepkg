@@ -8,7 +8,7 @@ let source_base = `https://github.com/llvm/llvm-project/releases/download/llvmor
   name: "llvm",
   description: "Compiler infrastructure",
   version: `${version}-1`,
-  // architecture: "any",
+  architecture: ["any"],
   homepage: "https://llvm.org",
   // license: ["custom:Apache 2.0 with LLVM Exception"],
   build_depends: [
