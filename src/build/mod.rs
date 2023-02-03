@@ -1,15 +1,25 @@
 mod engine;
 mod fetch;
 mod script;
+mod types;
 
 use crate::segment_info;
+use crate::types::PackageInfo;
 use anyhow::bail;
 use script::{BuildScript, PackScript};
+use serde::{Deserialize, Serialize};
+use smartstring::{LazyCompact, SmartString};
 use std::path::PathBuf;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PackageMeta {
+  architecture: SmartString<LazyCompact>,
+  info: PackageInfo,
+}
 
 pub fn run(path: PathBuf) -> anyhow::Result<()> {
   let script = BuildScript::new(path)?;
-  let source = &script.source().meta;
+  let source = &script.source().info;
   segment_info!("Starting building:", "{} {}", source.name, source.version);
   script.prepare()?;
   script.build()?;

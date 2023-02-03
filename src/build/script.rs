@@ -1,11 +1,13 @@
 use super::engine::create_engine;
+use super::types::{Execution, Package, Source};
 use crate::build::fetch::fetch_source;
+use crate::build::PackageMeta;
 use crate::segment_info;
-use crate::source::{Execution, Package, Source};
 use crate::util::PB_STYLE;
 use anyhow::bail;
 use indicatif::{ProgressBar, ProgressStyle};
 use rhai::{Dynamic, Engine, FnPtr, FuncArgs, AST};
+use smartstring::{LazyCompact, SmartString};
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -34,7 +36,7 @@ impl BuildScript {
     let ast = engine.compile_file_with_scope(&scope, path.clone())?;
     let mut value = engine.eval_ast_with_scope(&mut scope, &ast)?;
     let source = Source::from_dynamic(&mut value)?;
-    if !source.meta.architecture.contains(arch) {
+    if !source.info.architecture.contains(arch) {
       bail!("source architecture does not contain `{arch}`")
     }
 
@@ -86,7 +88,7 @@ impl BuildScript {
     println!("Not implemented, skipping");
 
     segment_info!("Fetching source...");
-    fetch_source(source_dir, &self.source.meta.source)?;
+    fetch_source(source_dir, &self.source.info.source)?;
 
     if let Some(prepare) = &self.source.prepare {
       segment_info!("Preparing source...");
@@ -129,7 +131,7 @@ pub struct PackScript {
   ast: AST,
   packages: BTreeSet<Package>,
   source_dir: Box<Path>,
-  arch: Box<str>,
+  arch: SmartString<LazyCompact>,
 }
 
 impl PackScript {
@@ -171,8 +173,8 @@ impl PackScript {
       segment_info!(
         "Starting packing:",
         "{} {}",
-        package.meta.name,
-        package.meta.version
+        package.info.name,
+        package.info.version
       );
       let package_dir = tempdir()?;
       let path = package_dir
@@ -187,7 +189,7 @@ impl PackScript {
       segment_info!("Creating tarball...");
       let archive_name = format!(
         "{}_{}_{}.tar.zst",
-        package.meta.name, package.meta.version, self.arch,
+        package.info.name, package.info.version, self.arch,
       );
       let mut archive = tar::Builder::new(ZstEncoder::new(File::create(&archive_name)?, 3)?);
       archive.follow_symlinks(false);
@@ -217,12 +219,16 @@ impl PackScript {
       pb.set_style(style);
 
       for path in paths {
-        let name = Path::new("root").join(path.strip_prefix(base)?);
+        let name = path.strip_prefix(base)?;
         archive.append_path_with_name(&path, name)?;
         pb.inc(1);
       }
 
-      let metadata = serde_json::to_vec_pretty(&package.meta)?;
+      let metadata = PackageMeta {
+        architecture: self.arch.clone(),
+        info: package.info.clone(),
+      };
+      let metadata = serde_json::to_vec_pretty(&metadata)?;
       let mut header = tar::Header::new_old();
       header.set_size(metadata.len() as _);
       header.set_path("metadata.json")?;

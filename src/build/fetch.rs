@@ -1,4 +1,4 @@
-use crate::source::{SourceFile, SourceLocation};
+use crate::types::{SourceFile, SourceLocation};
 use crate::util::{asyncify, tempfile_async, PB_STYLE_BYTES};
 use anyhow::bail;
 use bzip2::read::BzDecoder;
