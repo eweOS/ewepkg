@@ -23,20 +23,23 @@ pub struct BuildScript {
   path: Box<Path>,
   source: Source,
   source_dir: TempDir,
-  arch: Box<str>,
+  arch: SmartString<LazyCompact>,
 }
 
 impl BuildScript {
   pub fn new(path: PathBuf) -> anyhow::Result<Self> {
     let source_dir = tempdir()?;
     let arch = Command::new("uname").arg("-m").output()?.stdout;
-    let arch = from_utf8(&arch)?.trim();
+    let mut arch = from_utf8(&arch)?.trim();
     let (engine, mut scope) = create_engine(source_dir.path(), arch.to_string());
 
     let ast = engine.compile_file_with_scope(&scope, path.clone())?;
     let mut value = engine.eval_ast_with_scope(&mut scope, &ast)?;
     let source = Source::from_dynamic(&mut value)?;
-    if !source.info.architecture.contains(arch) {
+
+    if source.info.architecture.contains_all() {
+      arch = "all"
+    } else if !source.info.architecture.contains(arch) {
       bail!("source architecture does not contain `{arch}`")
     }
 
