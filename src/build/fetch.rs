@@ -131,7 +131,6 @@ fn extract_deb(mut src: FlowMeter<impl Read + Seek>, dst: &Path) -> io::Result<(
 
   for x in ["control", "data"] {
     pb.reset();
-    pb.set_message(format!("extracting {x}.tar.xz"));
     let control_path = dst.join(format!("{x}.tar.xz"));
     let f = File::open(&control_path)?;
     pb.set_length(f.metadata()?.len());
@@ -155,7 +154,7 @@ fn extract(
   pb: ProgressBar,
 ) -> io::Result<()> {
   use ArchiveKind::*;
-  pb.set_message("extracting");
+  pb.set_prefix("extracting");
   let src = FlowMeter::new(src, pb);
   match kind {
     Tar => tar::Archive::new(src).unpack(dst)?,
@@ -189,7 +188,7 @@ async fn download(
 }
 
 async fn verify(file: &SourceFile, f: &mut AsyncFile, pb: &ProgressBar) -> anyhow::Result<()> {
-  pb.set_message("verifying");
+  pb.set_prefix("verifying");
   let mut checksums = file
     .checksums
     .iter()
@@ -241,11 +240,11 @@ async fn fetch_single_source_inner(
     .unwrap()
     .progress_chars("=> ");
   pb.set_style(style);
-  pb.set_prefix(file.file_name().to_string());
+  pb.set_message(file.file_name().to_string());
 
   match &file.location {
     SourceLocation::Http(url) => {
-      pb.set_message("downloading");
+      pb.set_prefix("downloading");
       let url = url.clone();
       if let Some((ar_kind, dir_name)) = ar_kind {
         let dir_name = file.rename.as_deref().unwrap_or(dir_name);
@@ -312,12 +311,13 @@ async fn fetch_single_source_inner(
       } else {
         drop(f);
         let dst = source_dir.join(file.file_name());
-        pb.set_message("copying");
+        pb.set_prefix("copying");
         copy(path, dst).await?;
       }
     }
   }
-  pb.finish_with_message("done");
+  pb.set_prefix("done");
+  pb.finish();
   Ok(())
 }
 

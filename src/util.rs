@@ -4,10 +4,10 @@ use tokio::io;
 use tokio::task::spawn_blocking;
 
 pub const PB_STYLE: &str =
-  "{prefix:<30!}  {pos:>10} {len:>10} [{wide_bar:.blue}] {percent:>3}%  {msg:12}";
+  "{wide_msg}  {pos:>10} {len:>10} [{bar:20.blue}] {percent:>3}%  {prefix:<11!} ";
 
 pub const PB_STYLE_BYTES: &str =
-  "{prefix:<30!}  {bytes:>10} {total_bytes:>10} [{wide_bar:.blue}] {percent:>3}%  {msg:12}";
+  "{wide_msg}  {bytes:>10} {total_bytes:>10} [{bar:20.blue}] {percent:>3}%  {prefix:<11!} ";
 
 // Taken from Tokio
 pub async fn asyncify<F, T>(f: F) -> io::Result<T>

@@ -209,8 +209,8 @@ impl PackScript {
       }
 
       let pb = ProgressBar::new(paths.len() as _);
-      pb.set_prefix(archive_name);
-      pb.set_message("packing");
+      pb.set_message(archive_name);
+      pb.set_prefix("packing");
       let style = ProgressStyle::with_template(PB_STYLE)
         .unwrap()
         .progress_chars("=> ");
@@ -231,7 +231,8 @@ impl PackScript {
       archive.append(&header, &*metadata)?;
 
       archive.into_inner()?.finish()?;
-      pb.finish_with_message("done");
+      pb.set_prefix("done");
+      pb.finish();
     }
     Ok(())
   }
