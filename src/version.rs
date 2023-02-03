@@ -1,4 +1,5 @@
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use smartstring::{LazyCompact, SmartString};
 use std::cmp::Ordering::{self, *};
 use std::fmt::{self, Display, Formatter};
 use std::num::ParseIntError;
@@ -93,8 +94,8 @@ pub enum ParseVersionError {
 #[derive(Debug, Clone)]
 pub struct PackageVersion {
   epoch: u32,
-  upstream: Box<str>,
-  revision: Option<Box<str>>,
+  upstream: SmartString<LazyCompact>,
+  revision: Option<SmartString<LazyCompact>>,
 }
 
 impl FromStr for PackageVersion {

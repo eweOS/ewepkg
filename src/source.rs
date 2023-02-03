@@ -7,6 +7,7 @@ use rhai::EvalAltResult::{self, ErrorMismatchDataType};
 use rhai::{Dynamic, FnPtr, Map, Position};
 use serde::de::Error;
 use serde::{de, Deserialize, Deserializer, Serialize};
+use smartstring::{LazyCompact, SmartString};
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
@@ -29,7 +30,7 @@ pub fn assure_pkg_name<S: AsRef<str>>(s: S) -> Result<S, ParseNameError> {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-pub struct PackageName(Box<str>);
+pub struct PackageName(SmartString<LazyCompact>);
 
 impl FromStr for PackageName {
   type Err = ParseNameError;
@@ -85,7 +86,7 @@ impl<'de> Deserialize<'de> for PackageName {
 pub struct ParseNameError(char);
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ArchList(BTreeSet<Box<str>>);
+pub struct ArchList(BTreeSet<SmartString<LazyCompact>>);
 
 impl ArchList {
   pub fn contains(&self, arch: &str) -> bool {
@@ -109,7 +110,7 @@ impl ArchList {
 
 impl<'de> Deserialize<'de> for ArchList {
   fn deserialize<D: Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
-    let mut set = BTreeSet::<Box<str>>::deserialize(de)?;
+    let mut set = BTreeSet::<SmartString<_>>::deserialize(de)?;
     if set.is_empty() {
       return Err(serde::de::Error::invalid_length(
         0,
